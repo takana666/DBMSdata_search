@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>DBMSデータサーチ(仮)</title>
+  <title>DBMS種牡馬データ検索(仮テスト中)</title>
 
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
@@ -16,6 +16,7 @@
     .container {
       display: flex;
     }
+    /* 左パネル=幅2/5、右パネル=幅3/5 */
     .left-panel {
       width: 40%;
       padding: 10px;
@@ -24,8 +25,7 @@
     .right-panel {
       width: 60%;
       padding: 10px;
-      /* テーブルだけ横スクロール */
-      overflow-x: auto;
+      overflow-x: auto; /* テーブルだけ横スクロール */
     }
     .pedigree {
       width: 100%;
@@ -36,6 +36,9 @@
     .pedigree td {
       border: 1px solid black;
       padding: 5px;
+    }
+    .horse {
+      width: 100%;
     }
     .horse select {
       width: 100%;
@@ -54,97 +57,164 @@
   </style>
 </head>
 <body>
-  <h2>DBMSデータサーチ(仮)</h2>
+  <h2>DBMS種牡馬データ検索(仮テスト中)</h2>
+
   <div class="container">
-    <!-- 左パネル：血統表や親系統など -->
+    <!-- =====================
+         左パネル
+         ===================== -->
     <div class="left-panel">
-      <h3>血統表 (例)</h3>
-      <table class="pedigree">
+      <h3>血統表</h3>
+      <!-- 血統表 (15セル) -->
+      <table class="pedigree" id="tbl-pedigree">
         <tbody>
-          <tr>
-            <td rowspan="8">父</td>
-            <td class="horse" colspan="4"></td>
-          </tr>
-          <!-- 以降省略 -->
+          <tr><td rowspan="8">父</td><td class="horse" colspan="4"></td></tr>
+          <tr><td rowspan="4">父</td><td class="horse" colspan="3"></td></tr>
+          <tr><td rowspan="2">父</td><td class="horse" colspan="2"></td></tr>
+          <tr><td>父</td><td class="horse"></td></tr>
+          <tr><td>母</td><td>父</td><td class="horse"></td></tr>
+          <tr><td rowspan="3">母</td><td rowspan="2">父</td><td class="horse" colspan="2"></td></tr>
+          <tr><td>父</td><td class="horse"></td></tr>
+          <tr><td>母</td><td>父</td><td class="horse"></td></tr>
+          <tr><td rowspan="7">母</td><td rowspan="4">父</td><td class="horse" colspan="3"></td></tr>
+          <tr><td rowspan="2">父</td><td class="horse" colspan="2"></td></tr>
+          <tr><td>父</td><td class="horse"></td></tr>
+          <tr><td>母</td><td>父</td><td class="horse"></td></tr>
+          <tr><td rowspan="3">母</td><td rowspan="2">父</td><td class="horse" colspan="2"></td></tr>
+          <tr><td>父</td><td class="horse"></td></tr>
+          <tr><td>母</td><td>父</td><td class="horse"></td></tr>
+        </tbody>
+      </table>
+
+      <h3>親系統</h3>
+      <!-- 親系統 (15セル pa:) -->
+      <table class="pedigree" id="tbl-parent">
+        <tbody>
+          <tr><td rowspan="8">父</td><td class="horse" colspan="4"></td></tr>
+          <tr><td rowspan="4">父</td><td class="horse" colspan="3"></td></tr>
+          <tr><td rowspan="2">父</td><td class="horse" colspan="2"></td></tr>
+          <tr><td>父</td><td class="horse"></td></tr>
+          <tr><td>母</td><td>父</td><td class="horse"></td></tr>
+          <tr><td rowspan="3">母</td><td rowspan="2">父</td><td class="horse" colspan="2"></td></tr>
+          <tr><td>父</td><td class="horse"></td></tr>
+          <tr><td>母</td><td>父</td><td class="horse"></td></tr>
+          <tr><td rowspan="7">母</td><td rowspan="4">父</td><td class="horse" colspan="3"></td></tr>
+          <tr><td rowspan="2">父</td><td class="horse" colspan="2"></td></tr>
+          <tr><td>父</td><td class="horse"></td></tr>
+          <tr><td>母</td><td>父</td><td class="horse"></td></tr>
+          <tr><td rowspan="3">母</td><td rowspan="2">父</td><td class="horse" colspan="2"></td></tr>
+          <tr><td>父</td><td class="horse"></td></tr>
+          <tr><td>母</td><td>父</td><td class="horse"></td></tr>
+        </tbody>
+      </table>
+
+      <h3>子系統</h3>
+      <!-- 子系統 (15セル chi:) -->
+      <table class="pedigree" id="tbl-child">
+        <tbody>
+          <tr><td rowspan="8">父</td><td class="horse" colspan="4"></td></tr>
+          <tr><td rowspan="4">父</td><td class="horse" colspan="3"></td></tr>
+          <tr><td rowspan="2">父</td><td class="horse" colspan="2"></td></tr>
+          <tr><td>父</td><td class="horse"></td></tr>
+          <tr><td>母</td><td>父</td><td class="horse"></td></tr>
+          <tr><td rowspan="3">母</td><td rowspan="2">父</td><td class="horse" colspan="2"></td></tr>
+          <tr><td>父</td><td class="horse"></td></tr>
+          <tr><td>母</td><td>父</td><td class="horse"></td></tr>
+          <tr><td rowspan="7">母</td><td rowspan="4">父</td><td class="horse" colspan="3"></td></tr>
+          <tr><td rowspan="2">父</td><td class="horse" colspan="2"></td></tr>
+          <tr><td>父</td><td class="horse"></td></tr>
+          <tr><td>母</td><td>父</td><td class="horse"></td></tr>
+          <tr><td rowspan="3">母</td><td rowspan="2">父</td><td class="horse" colspan="2"></td></tr>
+          <tr><td>父</td><td class="horse"></td></tr>
+          <tr><td>母</td><td>父</td><td class="horse"></td></tr>
         </tbody>
       </table>
     </div>
 
-    <!-- 右パネル：DataTable -->
+    <!-- =====================
+         右パネル: CSVテーブル
+         ===================== -->
     <div class="right-panel">
-      <h3>CSVデータ</h3>
-      <p>同じディレクトリに <code>DBMSdata_20250210.csv</code> がある前提で、fetchします。</p>
+      <h3>仮で運用中。不具合見つけたら連絡ください</h3>
+      <p>
+        データは20250210時点のものです。<br>
+        PCで使用することを前提としています
+      </p>
       <table id="dataTable" class="display dataTable">
-        <thead>
-          <!-- JSで生成 -->
-        </thead>
+        <thead></thead>
         <tbody></tbody>
       </table>
     </div>
   </div>
 
   <script>
-    // GitHub Pagesで同階層 mydata.csv を読み込む例
-    const CSV_URL = "./DBMSdata_20250210.csv"; // 同じフォルダにmydata.csvを置く
-
+    // =========================
+    // 1. 定義
+    // =========================
+    const CSV_URL = "./mydata.csv";
     let table;
     let columnMap = {};
     let originalData = [];
 
-    // 右テーブル2行目の<select>でフィルタしたい列
-    const filterHeaders = [
-      "系統","category","距離","成長","ダート",
-      "体質","気性","実績","底力","安定","天性"
+    // 右側のプルダウン用列
+    const filterHeaders = [ "系統","category","距離","成長","ダート","体質","気性","実績","底力","安定","天性" ];
+
+    // 血統表(15) + 親系統(15) + 子系統(15) = 45 <td class="horse">
+    const pedigreeHeaders = [
+      "父","父父","父父父","父父父父","父父母父",
+      "父母父","父母父父","父母母父",
+      "母父","母父父","母父父父","母父母父",
+      "母母父","母母父父","母母母父"
     ];
+    const parentHeaders = [
+      "pa:父","pa:父父","pa:父父父","pa:父父父父","pa:父父母父",
+      "pa:父母父","pa:父母父父","pa:父母母父",
+      "pa:母父","pa:母父父","pa:母父父父","pa:母父母父",
+      "pa:母母父","pa:母母父父","pa:母母母父"
+    ];
+    const childHeaders = [
+      "chi:父","chi:父父","chi:父父父","chi:父父父父","chi:父父母父",
+      "chi:父母父","chi:父母父父","chi:父母母父",
+      "chi:母父","chi:母父父","chi:母父父父","chi:母父母父",
+      "chi:母母父","chi:母母父父","chi:母母母父"
+    ];
+    const allHeaders = pedigreeHeaders.concat(parentHeaders).concat(childHeaders);
 
+    // 左側・右側のフィルタをそれぞれ記録(列index -> 値)
+    const leftFilters  = {};
+    const rightFilters = {};
+
+    // =========================
+    // 2. CSVを自動読み込み
+    // =========================
     document.addEventListener("DOMContentLoaded", () => {
-      console.log("DOM Loaded. Attempting to fetch CSV:", CSV_URL);
-
       fetch(CSV_URL)
-        .then(res => {
-          if(!res.ok) {
-            throw new Error("HTTP error, status=" + res.status);
-          }
-          return res.text();
-        })
-        .then(csvText => {
-          console.log("CSV fetch成功:", csvText.substring(0,100) + "...");
-          parseCSVAndInit(csvText);
-        })
-        .catch(err => {
-          console.error("CSV読み込み失敗:", err);
-        });
+        .then(res => res.text())
+        .then(csvText => initTable(csvText))
+        .catch(err => console.error("CSV読み込み失敗:", err));
     });
 
-    function parseCSVAndInit(csvText){
-      const lines = csvText.split("\\n").map(line => line.split(",").map(c => c.trim()));
-      const headerRow = lines[0];
-      const dataRows = lines.slice(1).filter(row => row.length === headerRow.length);
+    function initTable(csvText){
+      const lines = csvText.split(/\r?\n/).filter(line => line.trim()!=="");
+      const headerRow = lines[0].split(",");
+      const dataRows  = lines.slice(1).map(line => line.split(",")).filter(row => row.length===headerRow.length);
 
-      console.log("Header:", headerRow);
-      console.log("Rows:", dataRows.length, "行");
+      headerRow.forEach((col, i) => columnMap[col] = i);
+      originalData = dataRows;
 
-      // 1行目:列名
+      // DataTablesヘッダー生成(2行: 1行目=列名, 2行目=フィルタ<select>)
       let firstRow = "<tr>" + headerRow.map(h => `<th>${h}</th>`).join("") + "</tr>";
-      // 2行目: filterHeaders に含まれる列だけ <select>
       let secondRow = "<tr>" + headerRow.map(h => {
         if(filterHeaders.includes(h)) {
           return `<th class='colfilter' data-col='${h}'><select><option value=''>すべて</option></select></th>`;
         } else {
-          return `<th></th>`;
+          return "<th></th>";
         }
       }).join("") + "</tr>";
-
       document.querySelector("#dataTable thead").innerHTML = firstRow + secondRow;
 
-      // columnMap
-      headerRow.forEach((col, i) => {
-        columnMap[col] = i;
-      });
-      originalData = dataRows;
-
-      // DataTables再生成
-      if($.fn.DataTable.isDataTable("#dataTable")) {
+      // DataTables生成
+      if($.fn.DataTable.isDataTable("#dataTable")){
         $("#dataTable").DataTable().destroy();
       }
       table = $("#dataTable").DataTable({
@@ -154,21 +224,26 @@
         orderCellsTop: true
       });
 
-      // 2行目の<select>に選択肢を入れる
+      // 左側プルダウン生成
+      updateAllSelects(dataRows);
+
+      // 右側ヘッダー2行目<select> 選択肢
       populateColumnFilters(headerRow, dataRows);
 
-      // 2行目<select>でフィルタ
+      // 右側<select>変化で onChangeHeaderSelect()
       document.querySelectorAll(".colfilter select").forEach(sel => {
         sel.addEventListener("change", onChangeHeaderSelect);
       });
     }
 
+    // =========================
+    // 3. 右ヘッダー2行目 <select> → DataTables検索
+    // =========================
     function populateColumnFilters(headerRow, dataRows){
       headerRow.forEach(colName => {
         if(!filterHeaders.includes(colName)) return;
         let colIndex = columnMap[colName];
-        if(colIndex === undefined) return;
-
+        if(colIndex===undefined) return;
         let uniqueVals = [...new Set(dataRows.map(r => r[colIndex]))].sort();
         let th = document.querySelector(`.colfilter[data-col='${colName}']`);
         if(!th) return;
@@ -181,20 +256,126 @@
       });
     }
 
-    function onChangeHeaderSelect(){
-      const selects = document.querySelectorAll(".colfilter select");
-      selects.forEach(sel => {
-        let colName = sel.parentElement.getAttribute("data-col");
-        let colIndex = columnMap[colName];
-        if(colIndex === undefined) return;
-        let val = sel.value;
-        if(val){
-          table.column(colIndex).search(`^${val}$`, true, false);
+    function onChangeHeaderSelect(e){
+      let colName = e.target.parentElement.getAttribute("data-col");
+      let colIndex = columnMap[colName];
+      if(colIndex!==undefined){
+        if(e.target.value){
+          rightFilters[colIndex] = e.target.value;
         } else {
-          table.column(colIndex).search("");
+          delete rightFilters[colIndex];
+        }
+      }
+      applyAllFilters();
+    }
+
+    // =========================
+    // 4. 左パネルプルダウン
+    // =========================
+    function updateAllSelects(dataRows){
+      const horseCells = document.querySelectorAll(".horse");
+
+      // 既存の選択を保持
+      let oldSelections = [];
+      horseCells.forEach((cell, i) => {
+        let sel = cell.querySelector("select");
+        oldSelections[i] = sel? sel.value : "";
+      });
+
+      // 再生成
+      horseCells.forEach((cell, i) => {
+        let sel = cell.querySelector("select");
+        if(!sel){
+          sel = document.createElement("select");
+          cell.appendChild(sel);
+        }
+        let headerName = allHeaders[i];
+        let colIndex = columnMap[headerName];
+        if(colIndex===undefined){
+          sel.innerHTML = "<option value=''>選択</option>";
+          return;
+        }
+        let uniqueVals = [...new Set(dataRows.map(r => r[colIndex]))].sort();
+        let opts = "<option value=''>選択</option>" +
+          uniqueVals.map(v => `<option value=\"${v}\">${v}</option>`).join("");
+        sel.innerHTML = opts;
+      });
+
+      // 選択を復元
+      horseCells.forEach((cell, i) => {
+        let sel = cell.querySelector("select");
+        if(!sel) return;
+        let oldVal = oldSelections[i];
+        if(oldVal && [...sel.options].some(o => o.value===oldVal)){
+          sel.value = oldVal;
+        } else {
+          sel.value = "";
         }
       });
+    }
+
+    document.addEventListener("change", e => {
+      if(e.target.matches(".horse select")){
+        applyLinkedFilter();
+      }
+    });
+    function applyLinkedFilter(){
+      // 左パネル選択を leftFilters に反映
+      const horseCells = document.querySelectorAll(".horse");
+      horseCells.forEach((cell, i) => {
+        let sel = cell.querySelector("select");
+        if(!sel) return;
+        let val = sel.value;
+        let headerName = allHeaders[i];
+        let colIndex = columnMap[headerName];
+        if(colIndex!==undefined){
+          if(val){
+            leftFilters[colIndex] = val;
+          } else {
+            delete leftFilters[colIndex];
+          }
+        }
+      });
+      applyAllFilters();
+    }
+
+    // =========================
+    // 5. 左右フィルタを AND でDataTables検索
+    // =========================
+    function applyAllFilters(){
+      // colごとにsearch設定
+      table.columns().every(function(colIdx){
+        const leftVal  = leftFilters[colIdx];
+        const rightVal = rightFilters[colIdx];
+
+        if(leftVal && rightVal){
+          // 両方指定 → 同じ値なら '^xxx$', 違うなら '^$' (マッチしない)
+          if(leftVal===rightVal){
+            this.search(`^${leftVal}$`, true, false);
+          } else {
+            // 不一致 → 該当なし
+            this.search('^$', true, false);
+          }
+        }
+        else if(leftVal){
+          // 左だけ
+          this.search(`^${leftVal}$`, true, false);
+        }
+        else if(rightVal){
+          // 右だけ
+          this.search(`^${rightVal}$`, true, false);
+        }
+        else {
+          // どちらも指定無し
+          this.search("");
+        }
+      });
+
       table.draw();
+
+      // フィルタ後行を取得し、左パネルプルダウンを再生成
+      let dtRows = table.rows({search:'applied'}).data().toArray();
+      updateAllSelects(dtRows);
     }
   </script>
 </body>
