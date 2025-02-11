@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>血統表＆CSVデータ (自動読み込み版)</title>
+  <title>DBMSデータサーチ(仮)</title>
 
   <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
   <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
@@ -16,7 +16,6 @@
     .container {
       display: flex;
     }
-    /* 左パネル=幅2/5、右パネル=幅3/5 */
     .left-panel {
       width: 40%;
       padding: 10px;
@@ -38,71 +37,46 @@
       border: 1px solid black;
       padding: 5px;
     }
-    .horse {
-      width: 100%;
-    }
     .horse select {
       width: 100%;
     }
-    table {
+    #dataTable {
       width: 100%;
+      min-width: 800px;
     }
     thead select {
       width: 100%;
       box-sizing: border-box;
     }
-    /* DataTables 横スクロール対応 */
     .dataTable {
       width: 100%;
     }
   </style>
 </head>
 <body>
-  <h2>血統表＆CSVデータ (自動読み込み版)</h2>
-
+  <h2>DBMSデータサーチ(仮)</h2>
   <div class="container">
-    <!-- 左パネル: 血統表 / 親系統 / 子系統 -->
+    <!-- 左パネル：血統表や親系統など -->
     <div class="left-panel">
-      <!-- 血統表 -->
-      <h3>血統表</h3>
+      <h3>血統表 (例)</h3>
       <table class="pedigree">
         <tbody>
-          <!-- 15セル (HTML省略) -->
-          <!-- 例えば: -->
           <tr>
             <td rowspan="8">父</td>
             <td class="horse" colspan="4"></td>
           </tr>
-          <!-- ... (続きはテスト1の構造そのまま) -->
-        </tbody>
-      </table>
-
-      <!-- 親系統 -->
-      <h3>親系統</h3>
-      <table class="pedigree">
-        <tbody>
-          <!-- 15セル -->
-          <!-- ...省略... -->
-        </tbody>
-      </table>
-
-      <!-- 子系統 -->
-      <h3>子系統</h3>
-      <table class="pedigree">
-        <tbody>
-          <!-- 15セル -->
-          <!-- ...省略... -->
+          <!-- 以降省略 -->
         </tbody>
       </table>
     </div>
 
-    <!-- 右パネル：CSVデータ -->
+    <!-- 右パネル：DataTable -->
     <div class="right-panel">
       <h3>CSVデータ</h3>
-      <!-- ファイル選択は廃止 -->
-      <table id="dataTable" class="display dataTable" style="min-width: 800px;">
+      <p>同じディレクトリに <code>DBMSdata_20250210.csv</code> がある前提で、fetchします。</p>
+      <table id="dataTable" class="display dataTable">
         <thead>
-          <!-- JavaScriptで 1行目(列名),2行目(フィルタ<select>) を生成 -->
+          <!-- JSで生成 -->
         </thead>
         <tbody></tbody>
       </table>
@@ -110,159 +84,92 @@
   </div>
 
   <script>
-    // =====================
-    // 変数定義など
-    // =====================
+    // GitHub Pagesで同階層 mydata.csv を読み込む例
+    const CSV_URL = "./DBMSdata_20250210.csv"; // 同じフォルダにmydata.csvを置く
+
     let table;
     let columnMap = {};
     let originalData = [];
 
-    // 右テーブル 2行目<select> でフィルタしたい列
+    // 右テーブル2行目の<select>でフィルタしたい列
     const filterHeaders = [
       "系統","category","距離","成長","ダート",
       "体質","気性","実績","底力","安定","天性"
     ];
 
-    // 血統表+親系統+子系統(合計45) CSV列
-    const pedigreeHeaders = [
-      "父","父父","父父父","父父父父","父父母父",
-      "父母父","父母父父","父母母父",
-      "母父","母父父","母父父父","母父母父",
-      "母母父","母母父父","母母母父"
-    ];
-    const parentHeaders = [
-      "pa:父","pa:父父","pa:父父父","pa:父父父父","pa:父父母父",
-      "pa:父母父","pa:父母父父","pa:父母母父",
-      "pa:母父","pa:母父父","pa:母父父父","pa:母父母父",
-      "pa:母母父","pa:母母父父","pa:母母母父"
-    ];
-    const childHeaders = [
-      "chi:父","chi:父父","chi:父父父","chi:父父父父","chi:父父母父",
-      "chi:父母父","chi:父母父父","chi:父母母父",
-      "chi:母父","chi:母父父","chi:母父父父","chi:母父母父",
-      "chi:母母父","chi:母母父父","chi:母母母父"
-    ];
-    const allHeaders = pedigreeHeaders.concat(parentHeaders).concat(childHeaders);
+    document.addEventListener("DOMContentLoaded", () => {
+      console.log("DOM Loaded. Attempting to fetch CSV:", CSV_URL);
 
-    // =====================
-    // ページ読み込み時: CSVを自動 fetch
-    // =====================
-    document.addEventListener("DOMContentLoaded", function(){
-      // CSVファイルは同階層に置いた「mydata.csv」と仮定
-      const csvUrl = "./mydata.csv"; // 例: ここをraw.githubusercontentなどにしてもOK
-
-      fetch(csvUrl)
-        .then(res => res.text())
-        .then(csvText => {
-          parseCsvAndInit(csvText);
+      fetch(CSV_URL)
+        .then(res => {
+          if(!res.ok) {
+            throw new Error("HTTP error, status=" + res.status);
+          }
+          return res.text();
         })
-        .catch(err => console.error("CSV読み込み失敗:", err));
+        .then(csvText => {
+          console.log("CSV fetch成功:", csvText.substring(0,100) + "...");
+          parseCSVAndInit(csvText);
+        })
+        .catch(err => {
+          console.error("CSV読み込み失敗:", err);
+        });
     });
 
-    // CSVテキストをパースして初期化
-    function parseCsvAndInit(csvText){
-      const rows = csvText.split("\\n").map(r => r.split(",").map(c => c.trim()));
-      const headerRow = rows[0];
-      const dataRows = rows.slice(1).filter(r => r.length === headerRow.length);
+    function parseCSVAndInit(csvText){
+      const lines = csvText.split("\\n").map(line => line.split(",").map(c => c.trim()));
+      const headerRow = lines[0];
+      const dataRows = lines.slice(1).filter(row => row.length === headerRow.length);
+
+      console.log("Header:", headerRow);
+      console.log("Rows:", dataRows.length, "行");
 
       // 1行目:列名
       let firstRow = "<tr>" + headerRow.map(h => `<th>${h}</th>`).join("") + "</tr>";
-      // 2行目: filterHeaders に含まれる列だけ <select> 置く
+      // 2行目: filterHeaders に含まれる列だけ <select>
       let secondRow = "<tr>" + headerRow.map(h => {
         if(filterHeaders.includes(h)) {
           return `<th class='colfilter' data-col='${h}'><select><option value=''>すべて</option></select></th>`;
         } else {
-          return "<th></th>";
+          return `<th></th>`;
         }
       }).join("") + "</tr>";
 
       document.querySelector("#dataTable thead").innerHTML = firstRow + secondRow;
 
-      // columnMap登録
-      headerRow.forEach((col,i) => {
+      // columnMap
+      headerRow.forEach((col, i) => {
         columnMap[col] = i;
       });
       originalData = dataRows;
 
       // DataTables再生成
-      if($.fn.DataTable.isDataTable("#dataTable")){
+      if($.fn.DataTable.isDataTable("#dataTable")) {
         $("#dataTable").DataTable().destroy();
       }
-      let tableOptions = {
+      table = $("#dataTable").DataTable({
         data: dataRows,
         columns: headerRow.map(h => ({ title: h })),
         scrollX: true,
         orderCellsTop: true
-      };
-      table = $("#dataTable").DataTable(tableOptions);
+      });
 
-      // 血統表 + 親系統 + 子系統プルダウン作成
-      updateAllSelects(originalData);
+      // 2行目の<select>に選択肢を入れる
+      populateColumnFilters(headerRow, dataRows);
 
-      // 右テーブル2行目 <select>に選択肢
-      populateColumnFilters(headerRow, originalData);
-
-      // 右テーブル2行目 <select>変更時 → フィルタ
+      // 2行目<select>でフィルタ
       document.querySelectorAll(".colfilter select").forEach(sel => {
         sel.addEventListener("change", onChangeHeaderSelect);
       });
     }
 
-    // =====================
-    // 血統表etcの <select> 再生成
-    // =====================
-    function updateAllSelects(dataRows){
-      const horseCells = document.querySelectorAll(".horse");
-
-      // (1) 現在の選択状態を保持
-      let currentSelections = [];
-      horseCells.forEach((cell, idx) => {
-        let sel = cell.querySelector("select");
-        currentSelections[idx] = sel ? sel.value : "";
-      });
-
-      // (2) プルダウンを再生成
-      horseCells.forEach((cell, idx) => {
-        let sel = cell.querySelector("select");
-        if(!sel){
-          sel = document.createElement("select");
-          cell.appendChild(sel);
-        }
-        let headerName = allHeaders[idx];
-        let colIndex = columnMap[headerName];
-        if(colIndex === undefined){
-          sel.innerHTML = "<option value=''>選択</option>";
-          return;
-        }
-        const uniqueVals = [...new Set(dataRows.map(r => r[colIndex]))].sort();
-        let opts = "<option value=''>選択</option>" +
-          uniqueVals.map(v => `<option value=\"${v}\">${v}</option>`).join("");
-        sel.innerHTML = opts;
-      });
-
-      // (3) 選択状態を復元
-      horseCells.forEach((cell, idx) => {
-        let sel = cell.querySelector("select");
-        if(!sel) return;
-        let oldVal = currentSelections[idx];
-        if(oldVal && [...sel.options].some(o => o.value === oldVal)){
-          sel.value = oldVal;
-        } else {
-          sel.value = "";
-        }
-      });
-    }
-
-    // =====================
-    // 右テーブル2行目 <select> に選択肢
-    // =====================
     function populateColumnFilters(headerRow, dataRows){
       headerRow.forEach(colName => {
         if(!filterHeaders.includes(colName)) return;
         let colIndex = columnMap[colName];
         if(colIndex === undefined) return;
-        let uniqueVals = [...new Set(dataRows.map(r => r[colIndex]))].sort();
 
+        let uniqueVals = [...new Set(dataRows.map(r => r[colIndex]))].sort();
         let th = document.querySelector(`.colfilter[data-col='${colName}']`);
         if(!th) return;
         let sel = th.querySelector("select");
@@ -274,10 +181,7 @@
       });
     }
 
-    // =====================
-    // 右テーブル2行目 <select> → DataTables検索
-    // =====================
-    function onChangeHeaderSelect(e){
+    function onChangeHeaderSelect(){
       const selects = document.querySelectorAll(".colfilter select");
       selects.forEach(sel => {
         let colName = sel.parentElement.getAttribute("data-col");
@@ -288,58 +192,6 @@
           table.column(colIndex).search(`^${val}$`, true, false);
         } else {
           table.column(colIndex).search("");
-        }
-      });
-      table.draw();
-    }
-
-    // =====================
-    // 左パネル .horse <select> → 連動フィルタ
-    // =====================
-    document.addEventListener("change", function(e){
-      if(e.target.matches(".horse select")){
-        applyLinkedFilter();
-      }
-    });
-
-    // 連動フィルタのフロー:
-    // (a) 左パネルの選択状態 → 手動で filteredData を作成
-    // (b) updateAllSelects(filteredData) で他のプルダウン絞り込み
-    // (c) DataTables検索
-    function applyLinkedFilter(){
-      // (a) 左パネルの選択状態
-      let filters = {};
-      const horseCells = document.querySelectorAll(".horse");
-      horseCells.forEach((cell, idx) => {
-        let sel = cell.querySelector("select");
-        if(!sel) return;
-        let val = sel.value;
-        if(val){
-          let headerName = allHeaders[idx];
-          let colIndex = columnMap[headerName];
-          if(colIndex !== undefined){
-            filters[colIndex] = val;
-          }
-        }
-      });
-
-      // (b) originalData を手動フィルタ
-      let filteredData = originalData.filter(row => {
-        return Object.keys(filters).every(ci => {
-          let cIdx = parseInt(ci,10);
-          return row[cIdx] === filters[ci];
-        });
-      });
-
-      // 他のプルダウンも絞り込み
-      updateAllSelects(filteredData);
-
-      // (c) DataTables検索
-      table.columns().every(function(colIdx){
-        if(filters[colIdx]){
-          this.search("^" + filters[colIdx] + "$", true, false);
-        } else {
-          this.search("");
         }
       });
       table.draw();
