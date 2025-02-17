@@ -135,10 +135,11 @@
          右パネル: CSVテーブル
          ===================== -->
     <div class="right-panel">
-      <h3>仮で運用中。不具合見つけたら連絡ください</h3>
+      <h3>テスト用</h3>
       <p>
-        データは20250210時点のものです。<br>
-        PCで使用することを前提としています
+        2025/02/11　リリース<br>
+        2025/02/18　リンク付与、牝馬データ追加
+      
       </p>
       <table id="dataTable" class="display dataTable">
         <thead></thead>
@@ -168,14 +169,14 @@
     ];
     const parentHeaders = [
       "pa:父","pa:父父","pa:父父父","pa:父父父父","pa:父父母父",
-      "pa:父母父","pa:父母父父","pa:父母母父",
-      "pa:母父","pa:母父父","pa:母父父父","pa:母父母父",
+      "pa:父母父","pa:父母父父","pa:母父",
+      "pa:母父父","pa:母父父父","pa:母父母父",
       "pa:母母父","pa:母母父父","pa:母母母父"
     ];
     const childHeaders = [
       "chi:父","chi:父父","chi:父父父","chi:父父父父","chi:父父母父",
-      "chi:父母父","chi:父母父父","chi:父母母父",
-      "chi:母父","chi:母父父","chi:母父父父","chi:母父母父",
+      "chi:父母父","chi:父母父父","chi:母父",
+      "chi:母父父","chi:母父父父","chi:母父母父",
       "chi:母母父","chi:母母父父","chi:母母母父"
     ];
     const allHeaders = pedigreeHeaders.concat(parentHeaders).concat(childHeaders);
@@ -197,14 +198,22 @@
     function initTable(csvText){
       const lines = csvText.split(/\r?\n/).filter(line => line.trim()!=="");
       const headerRow = lines[0].split(",");
-      const dataRows  = lines.slice(1).map(line => line.split(",")).filter(row => row.length===headerRow.length);
+      const dataRows  = lines.slice(1)
+                        .map(line => line.split(","))
+                        .filter(row => row.length===headerRow.length);
 
-      headerRow.forEach((col, i) => columnMap[col] = i);
+      headerRow.forEach((col, i) => { columnMap[col] = i; });
       originalData = dataRows;
 
       // DataTablesヘッダー生成(2行: 1行目=列名, 2行目=フィルタ<select>)
-      let firstRow = "<tr>" + headerRow.map(h => `<th>${h}</th>`).join("") + "</tr>";
+      // ※「link」列は非表示用なので、thに対してdisplay:noneとする
+      let firstRow = "<tr>" + headerRow.map(h => {
+        return h === "link" ? `<th style="display:none">${h}</th>` : `<th>${h}</th>`;
+      }).join("") + "</tr>";
       let secondRow = "<tr>" + headerRow.map(h => {
+        if(h === "link"){
+          return `<th style="display:none"></th>`;
+        }
         if(filterHeaders.includes(h)) {
           return `<th class='colfilter' data-col='${h}'><select><option value=''>すべて</option></select></th>`;
         } else {
@@ -213,13 +222,35 @@
       }).join("") + "</tr>";
       document.querySelector("#dataTable thead").innerHTML = firstRow + secondRow;
 
+      // DataTablesの列定義
+      // CSV内の「馬名」列については、同じ行の「link」列の値を利用してリンクに変換
+      let columnsDef = headerRow.map((h, idx) => {
+        if(h === "馬名"){
+          return {
+            title: h,
+            render: function(data, type, row, meta) {
+              // columnMap["link"]で「link」列のindexを取得
+              const linkIndex = columnMap["link"];
+              let url = row[linkIndex] || "#";
+              return `<a href="${url}" target="_blank">${data}</a>`;
+            }
+          };
+        } else {
+          return { title: h };
+        }
+      });
+
       // DataTables生成
       if($.fn.DataTable.isDataTable("#dataTable")){
         $("#dataTable").DataTable().destroy();
       }
       table = $("#dataTable").DataTable({
         data: dataRows,
-        columns: headerRow.map(h => ({ title: h })),
+        columns: columnsDef,
+        columnDefs: [
+          // 「link」列は非表示にする
+          { targets: columnMap["link"], visible: false }
+        ],
         scrollX: true,
         orderCellsTop: true
       });
@@ -251,7 +282,7 @@
         if(!sel) return;
 
         let opts = "<option value=''>すべて</option>" +
-          uniqueVals.map(v => `<option value=\"${v}\">${v}</option>`).join("");
+          uniqueVals.map(v => `<option value="${v}">${v}</option>`).join("");
         sel.innerHTML = opts;
       });
     }
@@ -297,7 +328,7 @@
         }
         let uniqueVals = [...new Set(dataRows.map(r => r[colIndex]))].sort();
         let opts = "<option value=''>選択</option>" +
-          uniqueVals.map(v => `<option value=\"${v}\">${v}</option>`).join("");
+          uniqueVals.map(v => `<option value="${v}">${v}</option>`).join("");
         sel.innerHTML = opts;
       });
 
