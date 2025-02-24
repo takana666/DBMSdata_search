@@ -13,17 +13,22 @@
       font-family: Arial, sans-serif;
       margin: 20px;
     }
+    /* タイトル直下にリリース情報を表示 */
+    #release-info {
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
     .container {
       display: flex;
     }
     /* 左パネル=幅2/5、右パネル=幅3/5 */
     .left-panel {
-      width: 40%;
+      width: 30%;
       padding: 10px;
       border-right: 2px solid #ccc;
     }
     .right-panel {
-      width: 60%;
+      width: 70%;
       padding: 10px;
       overflow-x: auto; /* テーブルだけ横スクロール */
     }
@@ -58,10 +63,15 @@
 </head>
 <body>
   <h2>DBMS種牡馬データ検索(仮テスト中)</h2>
+  <!-- 追加：タイトル直下にリリース情報を表示 -->
+  <div id="release-info">
+    <p>2025/02/11：リリース</p>
+    <p id="update-date">データ最終更新日：不明</p>
+  </div>
 
   <div class="container">
     <!-- =====================
-         左パネル
+         左パネル（変更なし）
          ===================== -->
     <div class="left-panel">
       <h3>血統表</h3>
@@ -132,15 +142,9 @@
     </div>
 
     <!-- =====================
-         右パネル: CSVテーブル
+         右パネル: CSVテーブル（「テスト用」等は削除）
          ===================== -->
     <div class="right-panel">
-      <h3>テスト用</h3>
-      <p>
-        2025/02/11　リリース<br>
-        2025/02/18　リンク付与、牝馬データ追加
-      
-      </p>
       <table id="dataTable" class="display dataTable">
         <thead></thead>
         <tbody></tbody>
@@ -157,7 +161,7 @@
     let columnMap = {};
     let originalData = [];
 
-    // 右側のプルダウン用列
+    // 右側のプルダウン用列（「馬名」以外は既存通り）
     const filterHeaders = [ "系統","親系統","category","距離","成長","ダート","体質","気性","実績","底力","安定","天性" ];
 
     // 血統表(15) + 親系統(15) + 子系統(15) = 45 <td class="horse">
@@ -186,33 +190,49 @@
     const rightFilters = {};
 
     // =========================
-    // 2. CSVを自動読み込み
+    // 2. CSVを自動読み込み（CSV更新日時を取得して更新日表示）
     // =========================
     document.addEventListener("DOMContentLoaded", () => {
       fetch(CSV_URL)
-        .then(res => res.text())
+        .then(res => {
+          let lastModified = res.headers.get("Last-Modified");
+          let dateStr = "不明";
+          if(lastModified){
+            let dateObj = new Date(lastModified);
+            let year = dateObj.getFullYear();
+            let month = ("0" + (dateObj.getMonth()+1)).slice(-2);
+            let day = ("0" + dateObj.getDate()).slice(-2);
+            dateStr = `${year}/${month}/${day}`;
+          }
+          document.getElementById("update-date").innerText = "データ最終更新日：" + dateStr;
+          return res.text();
+        })
         .then(csvText => initTable(csvText))
         .catch(err => console.error("CSV読み込み失敗:", err));
     });
 
     function initTable(csvText){
-      const lines = csvText.split(/\r?\n/).filter(line => line.trim()!=="");
+      const lines = csvText.split(/\r?\n/).filter(line => line.trim() !== "");
       const headerRow = lines[0].split(",");
       const dataRows  = lines.slice(1)
                         .map(line => line.split(","))
-                        .filter(row => row.length===headerRow.length);
+                        .filter(row => row.length === headerRow.length);
 
       headerRow.forEach((col, i) => { columnMap[col] = i; });
       originalData = dataRows;
 
-      // DataTablesヘッダー生成(2行: 1行目=列名, 2行目=フィルタ<select>)
-      // ※「link」列は非表示用なので、thに対してdisplay:noneとする
+      // DataTablesヘッダー生成（1行目=列名, 2行目=フィルタ<select>）
+      // ※「link」列は非表示
       let firstRow = "<tr>" + headerRow.map(h => {
         return h === "link" ? `<th style="display:none">${h}</th>` : `<th>${h}</th>`;
       }).join("") + "</tr>";
       let secondRow = "<tr>" + headerRow.map(h => {
         if(h === "link"){
           return `<th style="display:none"></th>`;
+        }
+        if(h === "馬名"){
+          // ここで馬名専用プルダウンを追加
+          return `<th class='colfilter-horse' data-col='${h}'><select><option value=''>すべて</option></select></th>`;
         }
         if(filterHeaders.includes(h)) {
           return `<th class='colfilter' data-col='${h}'><select><option value=''>すべて</option></select></th>`;
@@ -222,14 +242,12 @@
       }).join("") + "</tr>";
       document.querySelector("#dataTable thead").innerHTML = firstRow + secondRow;
 
-      // DataTablesの列定義
-      // CSV内の「馬名」列については、同じ行の「link」列の値を利用してリンクに変換
+      // DataTablesの列定義（馬名列はリンク付きに変換）
       let columnsDef = headerRow.map((h, idx) => {
         if(h === "馬名"){
           return {
             title: h,
             render: function(data, type, row, meta) {
-              // columnMap["link"]で「link」列のindexを取得
               const linkIndex = columnMap["link"];
               let url = row[linkIndex] || "#";
               return `<a href="${url}" target="_blank">${data}</a>`;
@@ -240,7 +258,6 @@
         }
       });
 
-      // DataTables生成
       if($.fn.DataTable.isDataTable("#dataTable")){
         $("#dataTable").DataTable().destroy();
       }
@@ -248,23 +265,25 @@
         data: dataRows,
         columns: columnsDef,
         columnDefs: [
-          // 「link」列は非表示にする
           { targets: columnMap["link"], visible: false }
         ],
         scrollX: true,
         orderCellsTop: true
       });
 
-      // 左側プルダウン生成
+      // 左側プルダウン生成（既存処理）
       updateAllSelects(dataRows);
 
-      // 右側ヘッダー2行目<select> 選択肢
+      // 右側ヘッダー2行目<select> の選択肢生成
       populateColumnFilters(headerRow, dataRows);
+      // 馬名専用プルダウン生成（抽出したハイフンで囲まれた漢字）
+      populateHorseNameFilter(dataRows);
 
-      // 右側<select>変化で onChangeHeaderSelect()
+      // 右側<select>のイベント設定
       document.querySelectorAll(".colfilter select").forEach(sel => {
         sel.addEventListener("change", onChangeHeaderSelect);
       });
+      document.querySelector(".colfilter-horse select").addEventListener("change", onChangeHorseFilter);
     }
 
     // =========================
@@ -274,13 +293,13 @@
       headerRow.forEach(colName => {
         if(!filterHeaders.includes(colName)) return;
         let colIndex = columnMap[colName];
-        if(colIndex===undefined) return;
-        let uniqueVals = [...new Set(dataRows.map(r => r[colIndex]))].sort();
+        if(colIndex === undefined) return;
         let th = document.querySelector(`.colfilter[data-col='${colName}']`);
         if(!th) return;
         let sel = th.querySelector("select");
         if(!sel) return;
 
+        let uniqueVals = [...new Set(dataRows.map(r => r[colIndex]))].sort();
         let opts = "<option value=''>すべて</option>" +
           uniqueVals.map(v => `<option value="${v}">${v}</option>`).join("");
         sel.innerHTML = opts;
@@ -290,7 +309,7 @@
     function onChangeHeaderSelect(e){
       let colName = e.target.parentElement.getAttribute("data-col");
       let colIndex = columnMap[colName];
-      if(colIndex!==undefined){
+      if(colIndex !== undefined){
         if(e.target.value){
           rightFilters[colIndex] = e.target.value;
         } else {
@@ -301,7 +320,42 @@
     }
 
     // =========================
-    // 4. 左パネルプルダウン
+    // 追加：馬名専用プルダウンの生成とイベントハンドラ
+    // =========================
+    function populateHorseNameFilter(dataRows){
+      let colIndex = columnMap["馬名"];
+      if(colIndex === undefined) return;
+      let sel = document.querySelector(".colfilter-horse select");
+      if(!sel) return;
+      let values = [];
+      dataRows.forEach(r => {
+        let text = r[colIndex];
+        let match = text.match(/-([\u4e00-\u9faf]+)-/);
+        if(match){
+          values.push(match[1]);
+        }
+      });
+      let uniqueVals = [...new Set(values)].sort();
+      let opts = "<option value=''>すべて</option>" +
+             uniqueVals.map(v => `<option value="${v}">${v}</option>`).join("");
+      sel.innerHTML = opts;
+    }
+    function onChangeHorseFilter(e){
+      let colName = e.target.parentElement.getAttribute("data-col");
+      let colIndex = columnMap[colName];
+      if(colIndex !== undefined){
+        if(e.target.value){
+          // 馬名列は「含む」検索に変更
+          rightFilters[colIndex] = e.target.value;
+        } else {
+          delete rightFilters[colIndex];
+        }
+      }
+      applyAllFilters();
+    }
+
+    // =========================
+    // 4. 左パネルプルダウン（既存処理）
     // =========================
     function updateAllSelects(dataRows){
       const horseCells = document.querySelectorAll(".horse");
@@ -310,7 +364,7 @@
       let oldSelections = [];
       horseCells.forEach((cell, i) => {
         let sel = cell.querySelector("select");
-        oldSelections[i] = sel? sel.value : "";
+        oldSelections[i] = sel ? sel.value : "";
       });
 
       // 再生成
@@ -322,7 +376,7 @@
         }
         let headerName = allHeaders[i];
         let colIndex = columnMap[headerName];
-        if(colIndex===undefined){
+        if(colIndex === undefined){
           sel.innerHTML = "<option value=''>選択</option>";
           return;
         }
@@ -337,7 +391,7 @@
         let sel = cell.querySelector("select");
         if(!sel) return;
         let oldVal = oldSelections[i];
-        if(oldVal && [...sel.options].some(o => o.value===oldVal)){
+        if(oldVal && [...sel.options].some(o => o.value === oldVal)){
           sel.value = oldVal;
         } else {
           sel.value = "";
@@ -351,7 +405,7 @@
       }
     });
     function applyLinkedFilter(){
-      // 左パネル選択を leftFilters に反映
+      // 左パネルの選択を leftFilters に反映
       const horseCells = document.querySelectorAll(".horse");
       horseCells.forEach((cell, i) => {
         let sel = cell.querySelector("select");
@@ -359,7 +413,7 @@
         let val = sel.value;
         let headerName = allHeaders[i];
         let colIndex = columnMap[headerName];
-        if(colIndex!==undefined){
+        if(colIndex !== undefined){
           if(val){
             leftFilters[colIndex] = val;
           } else {
@@ -374,37 +428,42 @@
     // 5. 左右フィルタを AND でDataTables検索
     // =========================
     function applyAllFilters(){
-      // colごとにsearch設定
+      let horseColIndex = columnMap["馬名"];
       table.columns().every(function(colIdx){
         const leftVal  = leftFilters[colIdx];
         const rightVal = rightFilters[colIdx];
-
-        if(leftVal && rightVal){
-          // 両方指定 → 同じ値なら '^xxx$', 違うなら '^$' (マッチしない)
-          if(leftVal===rightVal){
-            this.search(`^${leftVal}$`, true, false);
-          } else {
-            // 不一致 → 該当なし
-            this.search('^$', true, false);
+        let pattern = "";
+        if(colIdx === horseColIndex) {
+          if(leftVal && rightVal){
+            if(leftVal === rightVal){
+              pattern = `.*${leftVal}.*`;
+            } else {
+              pattern = '^$';
+            }
+          } else if(leftVal){
+            pattern = `.*${leftVal}.*`;
+          } else if(rightVal){
+            pattern = `.*${rightVal}.*`;
+          }
+        } else {
+          if(leftVal && rightVal){
+            if(leftVal === rightVal){
+              pattern = `^${leftVal}$`;
+            } else {
+              pattern = '^$';
+            }
+          } else if(leftVal){
+            pattern = `^${leftVal}$`;
+          } else if(rightVal){
+            pattern = `^${rightVal}$`;
           }
         }
-        else if(leftVal){
-          // 左だけ
-          this.search(`^${leftVal}$`, true, false);
-        }
-        else if(rightVal){
-          // 右だけ
-          this.search(`^${rightVal}$`, true, false);
-        }
-        else {
-          // どちらも指定無し
-          this.search("");
-        }
+        this.search(pattern, true, false);
       });
 
       table.draw();
 
-      // フィルタ後行を取得し、左パネルプルダウンを再生成
+      // フィルタ後の行データに合わせて左パネルプルダウンを再生成
       let dtRows = table.rows({search:'applied'}).data().toArray();
       updateAllSelects(dtRows);
     }
