@@ -60,6 +60,37 @@
       width: 100%;
     }
   </style>
+
+  <style>
+    /* --- Tabs for left pedigree area --- */
+    .tabs-left__nav { display:flex; gap:8px; margin:6px 0 8px; }
+    .tabs-left__btn { padding:6px 12px; border:1px solid #ccc; background:#f7f7f7; border-radius:6px; cursor:pointer; }
+    .tabs-left__btn.is-active { background:#fff; border-color:#888; font-weight:600; }
+    .tabs-left__pane { display:none; }
+    .tabs-left__pane.is-active { display:block; }
+    .gen-filter-grid { display:grid; grid-template-columns: 140px 1fr auto; gap:8px 12px; align-items:center; max-width: 980px; }
+    .gen-filter-row { display:contents; }
+    .gen-filter-grid label { white-space:nowrap; }
+    .gen-filter-grid select { min-width: 220px; }
+    .gen-filter-actions { margin-top: 6px; }
+    .hr { border-top: 1px solid #ddd; margin: 8px 0 12px; }
+  </style>
+
+
+  <style>
+    /* --- Adjusted grid for generation tab --- */
+    .gen-filter-grid { display:grid; grid-template-columns: 220px 1fr; gap:10px 14px; align-items:center; max-width: 980px; }
+    .gen-filter-grid label { white-space: normal; line-height:1.4; }
+    .gen-filter-grid select { width: 100%; min-width: 240px; }
+    .gen-filter-clear { grid-column: 1 / -1; margin-top: 4px; }
+    /* --- Tab visual emphasis --- */
+    .tabs-left__nav { display:flex; gap:8px; margin:6px 0 8px; border-bottom: 1px solid #ddd; }
+    .tabs-left__btn { padding:8px 14px; border:1px solid #ccc; background:#f9f9f9; border-top-left-radius:10px; border-top-right-radius:10px; cursor:pointer; }
+    .tabs-left__btn.is-active { background:#fff; border-color:#888; border-bottom-color:#fff; box-shadow: 0 -1px 0 #fff inset; font-weight:600; }
+    .ped-tabs { border:1px solid #ddd; border-radius:10px; padding:8px; background:#fff; }
+    .tabs-left__pane { margin-top:6px; }
+  </style>
+
 </head>
 <body>
   <h2>DBMS種牡馬データ検索(仮テスト中)</h2>
@@ -74,7 +105,15 @@
          左パネル（変更なし）
          ===================== -->
     <div class="left-panel">
-      <h3>血統表</h3>
+      
+    <div class="ped-tabs">
+      <div class="tabs-left__nav">
+        <button class="tabs-left__btn is-active" data-tab="tab-pedigree">血統表</button>
+        <button class="tabs-left__btn" data-tab="tab-generation">代数</button>
+      </div>
+
+      <div id="tab-pedigree" class="tabs-left__pane is-active">
+        <h3>血統表</h3>
       <!-- 血統表 (15セル) -->
       <table class="pedigree" id="tbl-pedigree">
         <tbody>
@@ -95,6 +134,39 @@
           <tr><td>母</td><td>父</td><td class="horse"></td></tr>
         </tbody>
       </table>
+      </div>
+
+      <div id="tab-generation" class="tabs-left__pane">
+        <h3>代数</h3>
+        <div class="gen-filter-grid" id="genFilterGrid">
+          <div class="gen-filter-row">
+            <label>2代目（父）</label>
+            <select id="gen2Select"><option value="">選択</option></select>
+            
+
+            <label>3代目（父父 / 母父）</label>
+            <select id="gen3Select"><option value="">選択</option></select>
+            
+
+            <label>4代目（父父父、等）</label>
+            <select id="gen4Select"><option value="">選択</option></select>
+            
+
+            <label>5代目（父父父父、等）</label>
+            <select id="gen5Select"><option value="">選択</option></select>
+
+  <label for="genAllSelect">全世代（2〜5代内すべて）</label>
+  <select id="genAllSelect"><option value="">選択</option></select>
+<div class="gen-filter-clear">
+  <button id="btnGenClear" type="button">クリア（代数フィルタ）</button>
+</div>
+            
+          </div>
+        </div>
+        <div class="hr"></div>
+      </div>
+    </div>
+    
 
       <h3>親系統</h3>
       <!-- 親系統 (15セル pa:) -->
@@ -162,7 +234,7 @@
     let originalData = [];
 
     // 右側のプルダウン用列（「馬名」以外は既存通り）
-    const filterHeaders = [ "系統","親系統","category","距離","成長","ダート","体質","気性","実績","底力","安定","天性" ];
+    const filterHeaders = [ "系統","親系統","子系統","category","距離","成長","ダート","体質","気性","実績","底力","安定","天性" ];
 
     // 血統表(15) + 親系統(15) + 子系統(15) = 45 <td class="horse">
     const pedigreeHeaders = [
@@ -299,7 +371,7 @@
         let sel = th.querySelector("select");
         if(!sel) return;
 
-        let uniqueVals = [...new Set(dataRows.map(r => r[colIndex]))].sort();
+        let uniqueVals = sortCandidates([...new Set(dataRows.map(r => r[colIndex]))] );
         let opts = "<option value=''>すべて</option>" +
           uniqueVals.map(v => `<option value="${v}">${v}</option>`).join("");
         sel.innerHTML = opts;
@@ -335,7 +407,7 @@
           values.push(match[1]);
         }
       });
-      let uniqueVals = [...new Set(values)].sort();
+      let uniqueVals = sortCandidates([...new Set(values)] );
       let opts = "<option value=''>すべて</option>" +
              uniqueVals.map(v => `<option value="${v}">${v}</option>`).join("");
       sel.innerHTML = opts;
@@ -380,7 +452,7 @@
           sel.innerHTML = "<option value=''>選択</option>";
           return;
         }
-        let uniqueVals = [...new Set(dataRows.map(r => r[colIndex]))].sort();
+        let uniqueVals = sortCandidates([...new Set(dataRows.map(r => r[colIndex]))] );
         let opts = "<option value=''>選択</option>" +
           uniqueVals.map(v => `<option value="${v}">${v}</option>`).join("");
         sel.innerHTML = opts;
@@ -468,5 +540,248 @@
       updateAllSelects(dtRows);
     }
   </script>
+
+<script>
+(function(){
+  const GEN_SLOTS = {
+    2: ["父"],
+    3: ["父父", "母父"],
+    4: ["父父父", "父母父", "母父父", "母母父"],
+    5: ["父父父父", "父父母父", "父母父父", "父母母父", "母父父父", "母父母父", "母母父父", "母母母父"]
+  };
+
+  const GEN_SLOTS_ALL = [...GEN_SLOTS[2], ...GEN_SLOTS[3], ...GEN_SLOTS[4], ...GEN_SLOTS[5]];
+
+
+  function setupTabs(){
+    const btns = document.querySelectorAll(".tabs-left__btn");
+    const panes = document.querySelectorAll(".tabs-left__pane");
+    btns.forEach(btn => {
+      btn.addEventListener("click", () => {
+        btns.forEach(b => b.classList.remove("is-active"));
+        panes.forEach(p => p.classList.remove("is-active"));
+        btn.classList.add("is-active");
+        const id = btn.getAttribute("data-tab");
+        document.getElementById(id).classList.add("is-active");
+      });
+    });
+  }
+
+  // Resolve the right-side DataTable instance
+  function getRightDT(){
+    // Prefer global 'table', else by id 'dataTable'
+    if (window.table && typeof window.table.rows === 'function') return window.table;
+    const node = document.getElementById('dataTable');
+    if (node && $.fn.dataTable.isDataTable(node)) return $(node).DataTable();
+    return null;
+  }
+
+  // Build a header->index map; prefer existing columnMap, else compute from DataTable headers
+  function resolveColumnMap(dt){
+    if (window.columnMap && typeof window.columnMap === 'object') return window.columnMap;
+    const map = {};
+    const headers = dt.columns().header();
+    for (let i=0; i<headers.length; i++){
+      const name = headers[i].textContent.trim();
+      if (name && map[name] === undefined) map[name] = i;
+    }
+    return map;
+  }
+
+  // Collect options from ALL rows for the given slot headers
+  function collectOptionsForSlots(dt, colMap, slotHeaders) {
+const set = new Set();
+    const allRows = dt.rows().data().toArray(); // all rows, unfiltered
+    slotHeaders.forEach(hdr => {
+      const ci = colMap[hdr];
+      if (ci === undefined) return;
+      for (const row of allRows){
+        const v = (row[ci] || '').toString().trim();
+        if (v) set.add(v);
+      
+
+
+
+
+}
+    });
+    return sortCandidates(Array.from(set));
+  }
+
+  function populateSelect(sel, values){
+    const keep = sel.value;
+    sel.innerHTML = '<option value=\"\">選択</option>' +
+      values.map(v=>`<option value=\"${v}\">${v}</option>`).join('');
+    if (keep && values.includes(keep)) sel.value = keep;
+  }
+
+  
+  function buildAllGenerationFilter(dt, colMap, value){
+    const headers = GEN_SLOTS_ALL;
+    const fn = function(settings, data, dataIndex){
+      if (settings.nTable !== dt.table().node()) return true;
+      if (!value) return true;
+      // Accept if value matches ANY of the headers (2〜5代のOR)
+      for (const hdr of headers){
+        const ci = colMap[hdr];
+        if (ci === undefined) continue;
+        const cell = (data[ci] || '').toString().trim();
+        if (cell && cell === value) return true;
+      }
+      return false;
+    };
+    fn.__GEN_FILTER__ = true;
+    return fn;
+  }
+
+  function buildGenerationFilter(dt, colMap, state){
+    const fn = function(settings, data, dataIndex){
+      if (settings.nTable !== dt.table().node()) return true;
+      for (const genKey of Object.keys(state)){
+        const target = state[genKey];
+        if (!target) continue;
+        const slots = GEN_SLOTS[genKey];
+        if (!slots || !slots.length) continue;
+        let ok = false;
+        for (const hdr of slots){
+          const ci = colMap[hdr];
+          if (ci === undefined) continue;
+          const cell = (data[ci] || '').toString().trim();
+          if (cell && cell === target){ ok = true; break; }
+        }
+        if (!ok) return false;
+      }
+      return true;
+    };
+    fn.__GEN_FILTER__ = true;
+    return fn;
+  }
+
+  function onceReady(cb){
+    const start = Date.now();
+    const timer = setInterval(() => {
+      const dt = getRightDT();
+      const ready = !!dt && dt.rows().count() > 0;
+      if (ready){
+        clearInterval(timer);
+        cb(dt);
+      }else if (Date.now() - start > 15000){
+        clearInterval(timer);
+        console.warn('Generation filters: timeout waiting for DataTable data.');
+      }
+    }, 100);
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    setupTabs();
+
+    onceReady(function(dt){
+      const colMap = resolveColumnMap(dt);
+      const gen2 = document.getElementById('gen2Select');
+      const gen3 = document.getElementById('gen3Select');
+      const gen4 = document.getElementById('gen4Select');
+      const gen5 = document.getElementById('gen5Select');
+      const genAll = document.getElementById('genAllSelect');
+      if(!(gen2 && gen3 && gen4 && gen5)) return;
+
+      function rebuildAllGenOptions(){
+        populateSelect(gen2, collectOptionsForSlots(dt, colMap, GEN_SLOTS[2]));
+        populateSelect(gen3, collectOptionsForSlots(dt, colMap, GEN_SLOTS[3]));
+        populateSelect(gen4, collectOptionsForSlots(dt, colMap, GEN_SLOTS[4]));
+        populateSelect(gen5, collectOptionsForSlots(dt, colMap, GEN_SLOTS[5]));
+        if (genAll) populateSelect(genAll, collectOptionsForSlots(dt, colMap, GEN_SLOTS_ALL));
+      }
+      rebuildAllGenOptions();
+
+      const state = { 2:'', 3:'', 4:'', 5:'' };
+      let allVal = '';
+      function applyGenFilter(){
+        $.fn.dataTable.ext.search = $.fn.dataTable.ext.search.filter(fn => !fn.__GEN_FILTER__);
+        if (allVal){
+          $.fn.dataTable.ext.search.push(buildAllGenerationFilter(dt, colMap, allVal));
+        } else if (Object.values(state).some(v=>!!v)){
+          $.fn.dataTable.ext.search.push(buildGenerationFilter(dt, colMap, state));
+        }
+        dt.draw();
+      }
+
+      [['2',gen2],['3',gen3],['4',gen4],['5',gen5]].forEach(([k,sel])=>{
+        sel.addEventListener('change', e => {
+          state[k] = e.target.value.trim();
+          if (state[k]){ allVal = ''; if(genAll) genAll.value=''; }
+          applyGenFilter();
+        });
+      });
+
+      if (genAll){
+        genAll.addEventListener('change', e => {
+          allVal = e.target.value.trim();
+          if (allVal){
+            state['2']=state['3']=state['4']=state['5']='';
+            gen2.value = gen3.value = gen4.value = gen5.value = '';
+          }
+          applyGenFilter();
+        });
+      }
+
+      const clearBtn = document.getElementById('btnGenClear');
+      if (clearBtn){
+        clearBtn.addEventListener('click', ()=>{
+          state['2']=state['3']=state['4']=state['5']='';
+          gen2.value = gen3.value = gen4.value = gen5.value = '';
+          if (genAll){ allVal=''; genAll.value=''; }
+          applyGenFilter();
+        });
+      }
+
+      // If the underlying data is reloaded (Ajax), refresh options again
+      $(dt.table().node()).on('xhr.dt', function(){ setTimeout(rebuildAllGenOptions, 0); });
+    });
+  });
+})();
+</script>
+
+
+<script>
+// -- Unified candidate sorter: Japanese < English(ASCII Latin-only) < Others; within Japanese, 'ウ' < 'ヴ'
+(function(){
+  if (window.__HAS_SORT_CANDIDATES__) return;
+  window.__HAS_SORT_CANDIDATES__ = true;
+
+  window.sortCandidates = function(inputArr){
+    const collJaBase = new Intl.Collator('ja', { usage: 'sort', sensitivity: 'base', numeric: true });
+    const collJaVar  = new Intl.Collator('ja', { usage: 'sort', sensitivity: 'variant', numeric: true });
+    const collEn     = new Intl.Collator('en', { usage: 'sort', sensitivity: 'base', numeric: true });
+    const stripZW = (s) => (s || '').replace(/[\u200B-\u200D\uFEFF]/g, '');
+    const normalize = (s) => stripZW((s || '').normalize('NFKC').trim());
+    const hasJapanese = (s) => /[\u3040-\u30FF\u4E00-\u9FFF]/.test(s); // kana/hira/kanji
+    const isAsciiLatinOnly = (s) => /^[\x00-\x7F]*[A-Za-z][\x00-\x7F]*$/.test(s);
+
+    const arr = Array.from(inputArr || []);
+    arr.sort((aRaw, bRaw) => {
+      const a = normalize(aRaw);
+      const b = normalize(bRaw);
+      const ga = hasJapanese(a) ? 0 : (isAsciiLatinOnly(a) ? 1 : 2);
+      const gb = hasJapanese(b) ? 0 : (isAsciiLatinOnly(b) ? 1 : 2);
+      if (ga !== gb) return ga - gb;
+
+      if (ga === 0) {
+        const baseCmp = collJaBase.compare(a, b);
+        if (baseCmp !== 0) return baseCmp;
+        const aHasVu = a.includes('ヴ');
+        const bHasVu = b.includes('ヴ');
+        if (aHasVu !== bHasVu) return aHasVu ? 1 : -1;
+        return collJaVar.compare(a, b);
+      }
+      if (ga === 1) {
+        return collEn.compare(a, b);
+      }
+      return collJaVar.compare(a, b);
+    });
+    return arr;
+  };
+})();
+</script>
+
 </body>
 </html>
