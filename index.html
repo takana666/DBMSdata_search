@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
   <meta charset="UTF-8">
   <title>DBMS種牡馬データ検索(仮テスト中)</title>
 
@@ -59,7 +61,128 @@
     .dataTable {
       width: 100%;
     }
-  </style>
+
+    /* DataTables 上部配置（左=牡馬/牝馬, 右=show entries + search） */
+    .dt-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .dt-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .dt-sex-filter label { margin-right: 12px; white-space: nowrap; }
+  
+/* ==== Mobile fix v6: prevent left panel expanding + stack generation selects ==== */
+@media (max-width: 640px){
+  /* モバイルでは左右を縦積み（はみ出し/押し出し防止） */
+  .container{ flex-direction: column !important; }
+  .left-panel, .right-panel{ width: 100% !important; }
+  .left-panel{ border-right: none !important; min-width: 0 !important; }
+  .right-panel{ min-width: 0 !important; }
+
+  /* 代数フィルタ部分だけ縦積み + 幅100% */
+  #genFilterGrid{ display:block !important; width:100% !important; }
+  #genFilterGrid label{ display:block !important; width:100% !important; margin:10px 0 4px 0 !important; }
+  #genFilterGrid select{
+    display:block !important;
+    width:100% !important;
+    max-width:100% !important;
+    min-width:0 !important; /* flexのmin-content問題対策 */
+    box-sizing:border-box !important;
+  }
+}
+
+/* --- SPST子系統 tab --- */
+#tab-spst-child .spst-block { margin: 8px 0 10px; }
+#tab-spst-child .spst-title { font-weight: 600; display:block; margin-bottom:6px; }
+#tab-spst-child select { width: 100%; box-sizing: border-box; }
+#tab-spst-child .spst-actions { margin-top: 6px; }
+#tab-spst-child button { padding: 6px 10px; }
+
+
+/* --- SPST子系統 tab (v4) --- */
+#tab-spst-child .spst-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
+#tab-spst-child .spst-head h3{ margin:0; }
+#tab-spst-child .spst-block{ margin: 8px 0 12px; }
+#tab-spst-child .spst-title{ font-weight:600; display:block; margin-bottom:6px; }
+#tab-spst-child select{ width:100%; box-sizing:border-box; }
+#tab-spst-child .spst-row{ display:flex; gap:6px; margin-top:6px; }
+#tab-spst-child .spst-row select{ flex:1 1 auto; min-width:0; }
+#tab-spst-child button{ padding:6px 10px; }
+
+
+/* 因名フィルタ */
+.dt-sex-filter select#filterIname { height: 28px; }
+.dt-sex-filter .sex-checks { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+
+
+/* SPST反映トグル */
+#tab-spst-child .spst-head-actions{ display:flex; gap:8px; align-items:center; }
+#tab-spst-child #spstToggle{ font-weight:600; }
+
+
+/* SPST子系統 追加行の縦幅を抑える */
+#tab-spst-child .spst-row{ align-items:center; }
+#tab-spst-child .spst-row button{ white-space:nowrap; writing-mode:horizontal-tb; line-height:1.2; padding:6px 10px; }
+#tab-spst-child .spst-row select{ height:28px; }
+
+
+/* --- SPST子系統 레이아웃調整（以前のv8系レイアウトに寄せる） --- */
+#tab-spst-child .spst-section{ width:100%; }
+#tab-spst-child .spst-list{ width:100%; box-sizing:border-box; }
+#tab-spst-child .spst-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  width:100%;
+}
+#tab-spst-child .spst-row select{
+  flex:1 1 auto;
+  min-width: 160px;
+  width:100%;
+  box-sizing:border-box;
+}
+#tab-spst-child .spst-row .spst-row-buttons{
+  display:flex;
+  gap:8px;
+  flex:0 0 auto;
+}
+#tab-spst-child .spst-row button{
+  height:28px;
+  padding:6px 10px;
+  line-height:1.1;
+  white-space:nowrap;
+  writing-mode:horizontal-tb;
+}
+
+
+
+/* ==== (スマホ/狭幅) SPST子系統 追加行を縦積み & 代数プルダウンを見出しの下に固定 ==== */
+@media (max-width: 900px){
+  /* SPST子系統：追加プルダウンの下にボタンを配置（枠内に収める） */
+  #tab-spst-child .spst-row{ display:block !important; }
+  #tab-spst-child .spst-row select{ width:100% !important; min-width:0 !important; }
+  #tab-spst-child .spst-row-buttons{ display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+  #tab-spst-child .spst-row-buttons button{ white-space:nowrap; }
+
+  /* 代数タブ：各ラベルの直下にプルダウン（右テーブルにはみ出さない） */
+  #tab-generation .gen-filter-grid{
+    display:block !important;
+    width:100% !important;
+    max-width:100% !important;
+  }
+  #tab-generation .gen-filter-row{ display:block !important; }
+  #tab-generation .gen-filter-grid label{
+    display:block !important;
+    width:100% !important;
+    margin:10px 0 4px 0 !important;
+  }
+  #tab-generation .gen-filter-grid select{
+    display:block !important;
+    width:100% !important;
+    max-width:100% !important;
+    min-width:0 !important;
+    box-sizing:border-box !important;
+  }
+  #tab-generation .gen-filter-clear{ margin-top:10px !important; }
+}
+
+</style>
 
   <style>
     /* --- Tabs for left pedigree area --- */
@@ -89,7 +212,15 @@
     .tabs-left__btn.is-active { background:#fff; border-color:#888; border-bottom-color:#fff; box-shadow: 0 -1px 0 #fff inset; font-weight:600; }
     .ped-tabs { border:1px solid #ddd; border-radius:10px; padding:8px; background:#fff; }
     .tabs-left__pane { margin-top:6px; }
-  </style>
+  
+/* ==== Mobile: SPST子系統 追加/削除ボタンをプルダウンの下に配置 ==== */
+@media (max-width: 640px){
+  #tab-spst-child .spst-row{ display:block !important; }
+  #tab-spst-child .spst-row select{ width:100% !important; min-width:0 !important; }
+  #tab-spst-child .spst-row-buttons{ display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+  #tab-spst-child .spst-row-buttons button{ white-space:nowrap; }
+}
+</style>
 
 </head>
 <body>
@@ -109,10 +240,11 @@
     <div class="ped-tabs">
       <div class="tabs-left__nav">
         <button class="tabs-left__btn is-active" data-tab="tab-pedigree">血統表</button>
+        <button class="tabs-left__btn" data-tab="tab-spst-child">SPST子系統</button>
         <button class="tabs-left__btn" data-tab="tab-generation">代数</button>
       </div>
 
-      <div id="tab-pedigree" class="tabs-left__pane is-active">
+<div id="tab-pedigree" class="tabs-left__pane is-active">
         <h3>血統表</h3>
       <!-- 血統表 (15セル) -->
       <table class="pedigree" id="tbl-pedigree">
@@ -134,39 +266,6 @@
           <tr><td>母</td><td>父</td><td class="horse"></td></tr>
         </tbody>
       </table>
-      </div>
-
-      <div id="tab-generation" class="tabs-left__pane">
-        <h3>代数</h3>
-        <div class="gen-filter-grid" id="genFilterGrid">
-          <div class="gen-filter-row">
-            <label>2代目（父）</label>
-            <select id="gen2Select"><option value="">選択</option></select>
-            
-
-            <label>3代目（父父 / 母父）</label>
-            <select id="gen3Select"><option value="">選択</option></select>
-            
-
-            <label>4代目（父父父、等）</label>
-            <select id="gen4Select"><option value="">選択</option></select>
-            
-
-            <label>5代目（父父父父、等）</label>
-            <select id="gen5Select"><option value="">選択</option></select>
-
-  <label for="genAllSelect">全世代（2〜5代内すべて）</label>
-  <select id="genAllSelect"><option value="">選択</option></select>
-<div class="gen-filter-clear">
-  <button id="btnGenClear" type="button">クリア（代数フィルタ）</button>
-</div>
-            
-          </div>
-        </div>
-        <div class="hr"></div>
-      </div>
-    </div>
-    
 
       <h3>親系統</h3>
       <!-- 親系統 (15セル pa:) -->
@@ -211,11 +310,76 @@
           <tr><td>母</td><td>父</td><td class="horse"></td></tr>
         </tbody>
       </table>
+    
+      </div>
+
+<div id="tab-spst-child" class="tabs-left__pane">
+        <div class="spst-head">
+          <h3>SPST子系統</h3>
+          <div class="spst-head-actions"><button type="button" id="spstToggle">未反映</button>
+</div>
+        </div>
+
+        <div class="spst-block">
+          <label class="spst-title"><input type="checkbox" id="spstSpeedEnabled" checked> スピード子系統</label>
+          <select id="spstSpeedSelect" multiple size="12"></select>
+          <div class="spst-row">
+            <select id="spstSpeedAddSelect"></select>
+            <div class="spst-row-buttons"><button type="button" id="spstSpeedAddBtn">追加</button>
+            <button type="button" id="spstSpeedDelBtn">削除</button>
+            <button type="button" id="spstSpeedClearBtn">全削除</button>
+            <button type="button" id="spstSpeedResetBtn">デフォ復帰</button></div>
+          </div>
+        </div>
+
+        <div class="hr"></div>
+
+        <div class="spst-block">
+          <label class="spst-title"><input type="checkbox" id="spstStaminaEnabled" checked> スタミナ子系統</label>
+          <select id="spstStaminaSelect" multiple size="12"></select>
+          <div class="spst-row">
+            <select id="spstStaminaAddSelect"></select>
+            <div class="spst-row-buttons"><button type="button" id="spstStaminaAddBtn">追加</button>
+            <button type="button" id="spstStaminaDelBtn">削除</button>
+            <button type="button" id="spstStaminaClearBtn">全削除</button>
+            <button type="button" id="spstStaminaResetBtn">デフォ復帰</button></div>
+          </div>
+        </div>
+      </div>
+
+<div id="tab-generation" class="tabs-left__pane">
+        <h3>代数</h3>
+        <div class="gen-filter-grid" id="genFilterGrid">
+          <div class="gen-filter-row">
+            <label>2代目（父）</label>
+            <select id="gen2Select"><option value="">選択</option></select>
+            
+
+            <label>3代目（父父 / 母父）</label>
+            <select id="gen3Select"><option value="">選択</option></select>
+            
+
+            <label>4代目（父父父、等）</label>
+            <select id="gen4Select"><option value="">選択</option></select>
+            
+
+            <label>5代目（父父父父、等）</label>
+            <select id="gen5Select"><option value="">選択</option></select>
+
+  <label for="genAllSelect">全世代（2〜5代内すべて）</label>
+  <select id="genAllSelect"><option value="">選択</option></select>
+<div class="gen-filter-clear">
+  <button id="btnGenClear" type="button">クリア（代数フィルタ）</button>
+</div>
+            
+          </div>
+        </div>
+        <div class="hr"></div>
+      </div>
+</div>
+    
     </div>
 
-    <!-- =====================
-         右パネル: CSVテーブル（「テスト用」等は削除）
-         ===================== -->
     <div class="right-panel">
       <table id="dataTable" class="display dataTable">
         <thead></thead>
@@ -245,16 +409,13 @@
     ];
     const parentHeaders = [
       "pa:父","pa:父父","pa:父父父","pa:父父父父","pa:父父母父",
-      "pa:父母父","pa:父母父父","pa:母父",
-      "pa:父母母父", 
+      "pa:父母父","pa:父母父父","pa:父母母父","pa:母父",
       "pa:母父父","pa:母父父父","pa:母父母父",
       "pa:母母父","pa:母母父父","pa:母母母父"
     ];
     const childHeaders = [
       "chi:父","chi:父父","chi:父父父","chi:父父父父","chi:父父母父",
-      "chi:父母父","chi:父母父父",
-      "chi:父母母父", 
-      "chi:母父",
+      "chi:父母父","chi:父母父父","chi:父母母父","chi:母父",
       "chi:母父父","chi:母父父父","chi:母父母父",
       "chi:母母父","chi:母母父父","chi:母母母父"
     ];
@@ -285,6 +446,167 @@
         .then(csvText => initTable(csvText))
         .catch(err => console.error("CSV読み込み失敗:", err));
     });
+      // =========================
+      // SPST子系統（子系統列フィルタ）
+      // =========================
+      const SPST_SPEED_DEFAULT = [
+        "ハビタット系","ボールドルーラー系","フェアトライアル系","クラリオン系","プリンスビオ系","トムフール系","エクリプス系","ダンテ系",
+        "オーエンテューダー系","ニアークティック系","ネアルコ系","インテント系","ブランドフォード系"
+      ];
+      const SPST_STAMINA_DEFAULT = [
+        "ハイペリオン系","ブレニム系","ネヴァーセイダイ系","プリンスキロ系","モスボロー系","サーゲイロード系","ヒムヤー系","テディ系",
+        "オリオール系","フォルティノ系","ナスルーラ系","ニアークティック系"
+      ];
+
+      let spstSpeedSet = new Set(SPST_SPEED_DEFAULT);
+      let spstStaminaSet = new Set(SPST_STAMINA_DEFAULT);
+
+      // SPST子系統 フィルタ反映ON/OFF（デフォルト: 未反映）
+      let spstActive = false;
+
+
+      
+function initSpstChildOptions(){
+        const colIdx = columnMap["子系統"];
+        if(colIdx === undefined) return;
+
+        // collect unique child lines
+        const uniq = new Set();
+        originalData.forEach(r => {
+          const v = (r[colIdx] ?? "").toString().trim();
+          if(v) uniq.add(v);
+        });
+        const allValues = Array.from(uniq).sort((a,b)=>a.localeCompare(b,'ja'));
+
+        const speedList = document.getElementById("spstSpeedSelect");
+        const stamList  = document.getElementById("spstStaminaSelect");
+        const speedAdd  = document.getElementById("spstSpeedAddSelect");
+        const stamAdd   = document.getElementById("spstStaminaAddSelect");
+        if(!speedList || !stamList || !speedAdd || !stamAdd) return;
+
+        function renderList(listEl, currentSet){
+          listEl.innerHTML = "";
+          Array.from(currentSet).sort((a,b)=>a.localeCompare(b,'ja')).forEach(v=>{
+            const opt = document.createElement("option");
+            opt.value = v;
+            opt.textContent = v;
+            listEl.appendChild(opt);
+          });
+        }
+
+        function renderAdd(addEl, currentSet){
+          addEl.innerHTML = "";
+          const candidates = allValues.filter(v => !currentSet.has(v));
+          if(candidates.length === 0){
+            const opt = document.createElement("option");
+            opt.value = "";
+            opt.textContent = "(追加候補なし)";
+            addEl.appendChild(opt);
+            addEl.disabled = true;
+          }else{
+            addEl.disabled = false;
+            candidates.forEach(v=>{
+              const opt = document.createElement("option");
+              opt.value = v;
+              opt.textContent = v;
+              addEl.appendChild(opt);
+            });
+          }
+        }
+
+        // 初期表示：デフォルトで指定された子系統のみ
+        renderList(speedList, spstSpeedSet);
+        renderList(stamList,  spstStaminaSet);
+        renderAdd(speedAdd, spstSpeedSet);
+        renderAdd(stamAdd,  spstStaminaSet);
+
+        // 追加/削除（リスト編集のみ。フィルタ反映は「反映」ボタンで実施）
+        document.getElementById("spstSpeedAddBtn")?.addEventListener("click", ()=>{
+          const v = (speedAdd.value ?? "").toString().trim();
+          if(!v) return;
+          spstSpeedSet.add(v);
+          renderList(speedList, spstSpeedSet);
+          renderAdd(speedAdd, spstSpeedSet);
+          if(spstActive) table.draw();
+        });
+        document.getElementById("spstStaminaAddBtn")?.addEventListener("click", ()=>{
+          const v = (stamAdd.value ?? "").toString().trim();
+          if(!v) return;
+          spstStaminaSet.add(v);
+          renderList(stamList, spstStaminaSet);
+          renderAdd(stamAdd, spstStaminaSet);
+          if(spstActive) table.draw();
+        });
+
+        document.getElementById("spstSpeedDelBtn")?.addEventListener("click", ()=>{
+          const selected = Array.from(speedList.selectedOptions).map(o=>o.value);
+          selected.forEach(v=>spstSpeedSet.delete(v));
+          renderList(speedList, spstSpeedSet);
+          renderAdd(speedAdd, spstSpeedSet);
+          if(spstActive) table.draw();
+        });
+        document.getElementById("spstStaminaDelBtn")?.addEventListener("click", ()=>{
+          const selected = Array.from(stamList.selectedOptions).map(o=>o.value);
+          selected.forEach(v=>spstStaminaSet.delete(v));
+          renderList(stamList, spstStaminaSet);
+          renderAdd(stamAdd, spstStaminaSet);
+          if(spstActive) table.draw();
+        });
+
+
+        // 全削除 / デフォ復帰（リスト編集のみ。反映中なら即draw）
+        document.getElementById("spstSpeedClearBtn")?.addEventListener("click", ()=>{
+          spstSpeedSet.clear();
+          renderList(speedList, spstSpeedSet);
+          renderAdd(speedAdd, spstSpeedSet);
+          if(spstActive) table.draw();
+        });
+        document.getElementById("spstStaminaClearBtn")?.addEventListener("click", ()=>{
+          spstStaminaSet.clear();
+          renderList(stamList, spstStaminaSet);
+          renderAdd(stamAdd, spstStaminaSet);
+          if(spstActive) table.draw();
+        });
+
+        document.getElementById("spstSpeedResetBtn")?.addEventListener("click", ()=>{
+          spstSpeedSet.clear();
+          SPST_SPEED_DEFAULT.forEach(v=>spstSpeedSet.add(v));
+          renderList(speedList, spstSpeedSet);
+          renderAdd(speedAdd, spstSpeedSet);
+          if(spstActive) table.draw();
+        });
+        document.getElementById("spstStaminaResetBtn")?.addEventListener("click", ()=>{
+          spstStaminaSet.clear();
+          SPST_STAMINA_DEFAULT.forEach(v=>spstStaminaSet.add(v));
+          renderList(stamList, spstStaminaSet);
+          renderAdd(stamAdd, spstStaminaSet);
+          if(spstActive) table.draw();
+        });
+
+
+        
+        // 反映ON/OFFトグル（デフォルト: 未反映）
+        (function(){
+          const btn = document.getElementById('spstToggle');
+          if(!btn) return;
+          const update = ()=>{ btn.textContent = spstActive ? '反映中' : '未反映'; };
+          update();
+          btn.addEventListener('click', ()=>{
+            spstActive = !spstActive;
+            update();
+            table.draw();
+          });
+        })();
+
+        // スピ/スタの有効チェックのON/OFFも、反映中なら即テーブルへ同期
+        document.getElementById("spstSpeedEnabled")?.addEventListener("change", ()=>{
+          if(spstActive) table.draw();
+        });
+        document.getElementById("spstStaminaEnabled")?.addEventListener("change", ()=>{
+          if(spstActive) table.draw();
+        });
+      }
+
 
     function initTable(csvText){
       const lines = csvText.split(/\r?\n/).filter(line => line.trim() !== "");
@@ -295,6 +617,11 @@
 
       headerRow.forEach((col, i) => { columnMap[col] = i; });
       originalData = dataRows;
+      initSpstChildOptions();
+
+
+
+
 
       // DataTablesヘッダー生成（1行目=列名, 2行目=フィルタ<select>）
       // ※「link」列は非表示
@@ -343,8 +670,178 @@
           { targets: columnMap["link"], visible: false }
         ],
         scrollX: true,
-        orderCellsTop: true
+        orderCellsTop: true,
+        dom: '<"dt-top"<"dt-sex-filter"><"dt-right"lf>>rt<"bottom"ip><"clear">',
       });
+
+      // (v7) DataTables描画後に左パネル（血統表/親系統/子系統）プルダウンを常に同期
+      // SPST子系統など table.draw() のみで更新されるケースでも、検索適用後データに追随させる
+      table.on('draw', function(){
+        try{
+          let dtRows = table.rows({search:'applied'}).data().toArray();
+          updateAllSelects(dtRows);
+        }catch(e){}
+      });
+
+
+      // --- 牡馬/牝馬チェックボックス（距離の空/非空で絞り込み） ---
+      (function(){
+        // 左側（元 show entries の位置）にチェックボックスを配置
+                const $sex = $('<div class="sex-checks">' +
+          '<label><input type="checkbox" id="filterMale" checked>牡馬</label>' +
+          '<label><input type="checkbox" id="filterFemale" checked>牝馬</label>' +
+          '<label style="margin-left:8px;">因名 ' +
+            '<select id="filterIname" style="min-width:120px;">' +
+              '<option value="">すべて</option>' +
+            '</select>' +
+          '</label>' +
+          '<label style="margin-left:8px;"><input type="checkbox" id="filterSho">走因子</label>' +
+          '<label style="margin-left:8px;"><input type="checkbox" id="filterOu">中因子</label>' +
+          '<label style="margin-left:8px;"><input type="checkbox" id="filter3">3因子のみ表示</label>' +
+        '</div>');
+        $('.dt-sex-filter').empty().append($sex);
+
+        // 「距離」列を特定
+        const distanceCol = table.columns().header().toArray().findIndex(h => $(h).text().trim() === '距離');
+
+
+        // 「馬名」列を特定（因名抽出元）
+        const horseNameCol = table.columns().header().toArray().findIndex(h => $(h).text().trim() === '馬名');
+
+        // 因名（-漢字2文字-）抽出関数
+        function extractInameFromHorseName(name){
+          const s = (name ?? '').toString();
+          const m = s.match(/-([\u4e00-\u9fff]{2})-/);
+          return m ? m[1] : '';
+        }
+
+        // 因名プルダウンを初期化（ユニーク値）
+        (function initInameDropdown(){
+          if(horseNameCol < 0) return;
+          const set = new Set();
+          originalData.forEach(r => {
+            const nm = r[horseNameCol];
+            const iname = extractInameFromHorseName(nm);
+            if(iname) set.add(iname);
+          });
+          const vals = Array.from(set).sort((a,b)=>a.localeCompare(b,'ja'));
+          const $sel = $('#filterIname');
+          vals.forEach(v => $sel.append($('<option>').val(v).text(v)));
+        })();
+
+        const THREE_FACTOR_SET = new Set([
+          "天煌","天禊","天闘","天靭",
+          "央叡","央天","央燕","央獅","央瑚","央瓏","央迅","央魂",
+          "煉禊","煌魂",
+          "燕巧","燕禊","燕闘","燕順",
+          "獅煌","獅禊","獅闘",
+          "瑚巧","瑚狂","瑚闘",
+          "瓏禊","瓏覇","瓏闘",
+          "瞬天","瞬神",
+          "神煌","神狂","神速",
+          "翔叡","翔天","翔燕","翔獅","翔瑚","翔瓏","翔迅","翔魂",
+          "覇閃","覇魂",
+          "迅闘",
+          "閃煌","閃禊",
+          "闘神"
+        ]);
+
+
+        // DataTables カスタムフィルタ
+        $.fn.dataTable.ext.search.push(function(settings, data){
+          if(settings.nTable !== table.table().node()) return true;
+
+          const male = $('#filterMale').prop('checked');
+          const female = $('#filterFemale').prop('checked');
+
+          // 性別フィルタは「条件の一部」として判定（他フィルタも通す）
+          let sexPass = true;
+
+const v = (distanceCol >= 0 ? (data[distanceCol] ?? '') : '').toString().trim();
+          const hasDistance = v !== '';
+
+
+          // ---- 因名フィルタ ----
+          let iname = '';
+          if(horseNameCol >= 0){
+            iname = extractInameFromHorseName(data[horseNameCol] ?? '');
+          }
+
+          // 因名プルダウン（完全一致）
+          const inameSel = ($('#filterIname').val() ?? '').toString().trim();
+          if(inameSel && iname !== inameSel) return false;
+
+          // 因子チェック（複数ONの場合は OR）
+          const fSho = $('#filterSho').prop('checked');
+          const fOu  = $('#filterOu').prop('checked');
+          const f3   = $('#filter3').prop('checked');
+
+          if(fSho || fOu || f3){
+            let ok = false;
+            if(fSho && iname.includes('翔')) ok = true;
+            if(fOu  && iname.includes('央')) ok = true;
+            if(f3   && THREE_FACTOR_SET.has(iname)) ok = true;
+            if(!ok) return false;
+          }
+
+
+          // 牡馬のみ：距離がブランクでない
+          if(male && !female) sexPass = hasDistance;
+
+          // 牝馬のみ：距離がブランク
+          if(!male && female) sexPass = !hasDistance;
+
+          return sexPass;
+        });
+
+        $('#filterMale, #filterFemale, #filterIname, #filterSho, #filterOu, #filter3').on('change', function(){
+          table.draw();
+        });
+      })();
+
+
+      // --- SPST子系統フィルタ（子系統列の OR フィルタ） ---
+      (function(){
+        // DataTables ext.search に追加（既存フィルタはそのまま）
+        $.fn.dataTable.ext.search.push(function(settings, data){
+          if(settings.nTable !== table.table().node()) return true;
+
+          // SPSTタブの反映がOFFなら何もしない
+          if(!spstActive) return true;
+
+
+          const colIdx = columnMap["子系統"];
+          if(colIdx === undefined) return true;
+
+          const speedOn = $('#spstSpeedEnabled').prop('checked');
+          const stamOn  = $('#spstStaminaEnabled').prop('checked');
+
+          // 両方OFFならフィルタ無し
+          if(!speedOn && !stamOn) return true;
+
+          const v = (data[colIdx] ?? '').toString().trim();
+          if(!v) return false;
+
+          // 両方ON：和集合（OR）
+          if(speedOn && stamOn){
+            return spstSpeedSet.has(v) || spstStaminaSet.has(v);
+          }
+          if(speedOn){
+            return spstSpeedSet.has(v);
+          }
+          // stamina only
+          return spstStaminaSet.has(v);
+        });
+
+        function readMultiSelect(sel){
+          return new Set(Array.from(sel.selectedOptions).map(o=>o.value));
+        }
+
+        // 反映ボタン（どちらを押しても同じ反映）
+        // (v4) apply handled by #spstApplyAll
+
+      })();
+
 
       // 左側プルダウン生成（既存処理）
       updateAllSelects(dataRows);
