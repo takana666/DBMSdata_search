@@ -182,6 +182,16 @@
   #tab-generation .gen-filter-clear{ margin-top:10px !important; }
 }
 
+
+/* ===== SPST mobile visible list (iOS/Android) ===== */
+.spst-mobile-list{ display:none; border:1px solid #bbb; border-radius:3px; background:#fff; max-height: 240px; overflow:auto; padding:2px; box-sizing:border-box; }
+.spst-mobile-item{ display:block; width:100%; text-align:left; border:0; background:transparent; padding:6px 8px; font-size:14px; line-height:1.2; }
+.spst-mobile-item + .spst-mobile-item{ border-top:1px solid #eee; }
+.spst-mobile-item.is-selected{ background:#dbeeff; }
+@media (max-width: 900px){
+  #spstSpeedSelect, #spstStaminaSelect{ display:none; }
+  #spstSpeedMobileList, #spstStaminaMobileList{ display:block; }
+}
 </style>
 
   <style>
@@ -323,6 +333,7 @@
         <div class="spst-block">
           <label class="spst-title"><input type="checkbox" id="spstSpeedEnabled" checked> スピード子系統</label>
           <select id="spstSpeedSelect" multiple size="12"></select>
+          <div id="spstSpeedMobileList" class="spst-mobile-list" aria-label="スピード子系統 選択リスト"></div>
           <div class="spst-row">
             <select id="spstSpeedAddSelect"></select>
             <div class="spst-row-buttons"><button type="button" id="spstSpeedAddBtn">追加</button>
@@ -337,6 +348,7 @@
         <div class="spst-block">
           <label class="spst-title"><input type="checkbox" id="spstStaminaEnabled" checked> スタミナ子系統</label>
           <select id="spstStaminaSelect" multiple size="12"></select>
+          <div id="spstStaminaMobileList" class="spst-mobile-list" aria-label="スタミナ子系統 選択リスト"></div>
           <div class="spst-row">
             <select id="spstStaminaAddSelect"></select>
             <div class="spst-row-buttons"><button type="button" id="spstStaminaAddBtn">追加</button>
@@ -491,6 +503,46 @@ function initSpstChildOptions(){
             opt.value = v;
             opt.textContent = v;
             listEl.appendChild(opt);
+          });
+          renderSpstMobileList(listEl);
+
+        }
+
+        const __spstMobileMap = {
+          "spstSpeedSelect": "spstSpeedMobileList",
+          "spstStaminaSelect": "spstStaminaMobileList"
+        };
+
+        function renderSpstMobileList(listEl){
+          const cid = __spstMobileMap[listEl.id];
+          if(!cid) return;
+          const container = document.getElementById(cid);
+          if(!container) return;
+
+          // Only show on narrow screens (CSS also handles)
+          container.innerHTML = "";
+          const opts = Array.from(listEl.options);
+          if(opts.length === 0){
+            // empty state
+            const empty = document.createElement("div");
+            empty.style.padding = "6px 8px";
+            empty.style.color = "#666";
+            empty.textContent = "（なし）";
+            container.appendChild(empty);
+            return;
+          }
+
+          opts.forEach(opt=>{
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "spst-mobile-item" + (opt.selected ? " is-selected" : "");
+            btn.textContent = opt.textContent;
+            btn.addEventListener("click", ()=>{
+              // toggle selection like <select multiple>
+              opt.selected = !opt.selected;
+              btn.classList.toggle("is-selected", opt.selected);
+            });
+            container.appendChild(btn);
           });
         }
 
