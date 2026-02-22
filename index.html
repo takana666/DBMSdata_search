@@ -410,7 +410,16 @@
     let originalData = [];
 
     // 右側のプルダウン用列（「馬名」以外は既存通り）
-    const filterHeaders = [ "系統","親系統","子系統","category","距離","成長","ダート","体質","気性","実績","底力","安定","天性" ];
+    const filterHeaders = ["系統","親系統","子系統","距離","成長","適応力","体質","気性","実績","底力","安定","非凡種類","天性"];
+
+      // 右テーブルで非表示にする列（CSV上は保持）
+      const HIDDEN_COLS = new Set([
+        "link",
+        "hibon_link",
+        "因子1","因子2","因子3","category",
+        "特化_発揮効果","特化_発揮条件","特化_発揮対象","特化_発揮確率",
+        "発揮効果","発揮条件","発揮対象","発揮確率"
+      ]);
 
     // 血統表(15) + 親系統(15) + 子系統(15) = 45 <td class="horse">
     const pedigreeHeaders = [
@@ -661,13 +670,66 @@ function initSpstChildOptions(){
 
 
     function initTable(csvText){
-      const lines = csvText.split(/\r?\n/).filter(line => line.trim() !== "");
-      const headerRow = lines[0].split(",");
-      const dataRows  = lines.slice(1)
-                        .map(line => line.split(","))
-                        .filter(row => row.length === headerRow.length);
+      // --- Robust CSV parser (handles quotes, commas, newlines) ---
+    function parseCSVRobust(text) {
+      const rows = [];
+      let row = [];
+      let field = "";
+      let inQuotes = false;
 
-      headerRow.forEach((col, i) => { columnMap[col] = i; });
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+
+        if (inQuotes) {
+          if (c === '"') {
+            if (text[i + 1] === '"') { // escaped quote
+              field += '"';
+              i++;
+            } else {
+              inQuotes = false;
+            }
+          } else {
+            field += c;
+          }
+        } else {
+          if (c === '"') {
+            inQuotes = true;
+          } else if (c === ',') {
+            row.push(field);
+            field = "";
+          } else if (c === '\n') {
+            row.push(field);
+            field = "";
+            rows.push(row);
+            row = [];
+          } else if (c === '\r') {
+            // ignore
+          } else {
+            field += c;
+          }
+        }
+      }
+      // last field/row
+      row.push(field);
+      rows.push(row);
+
+      // drop trailing blank rows
+      return rows.filter(r => !(r.length === 1 && (r[0] ?? "").trim() === ""));
+    }
+
+    const parsedRows = parseCSVRobust(csvText);
+    const headerRow = (parsedRows[0] || []).map(h => String(h || '').replace(/^\uFEFF/, '').trim());
+    const dataRows = (parsedRows.slice(1) || []).map(r => {
+      const rr = r.slice(0, headerRow.length);
+      while (rr.length < headerRow.length) rr.push("");
+      return rr;
+    });
+
+headerRow.forEach((col, i) => {
+            const key = String(col || '').replace(/^\uFEFF/, '').trim();
+            columnMap[key] = i;
+            columnMap[col] = i; // fallback
+          });
       originalData = dataRows;
       initSpstChildOptions();
 
@@ -678,10 +740,10 @@ function initSpstChildOptions(){
       // DataTablesヘッダー生成（1行目=列名, 2行目=フィルタ<select>）
       // ※「link」列は非表示
       let firstRow = "<tr>" + headerRow.map(h => {
-        return h === "link" ? `<th style="display:none">${h}</th>` : `<th>${h}</th>`;
+        return HIDDEN_COLS.has(h) ? `<th style="display:none">${h}</th>` : `<th>${h}</th>`;
       }).join("") + "</tr>";
       let secondRow = "<tr>" + headerRow.map(h => {
-        if(h === "link"){
+        if(HIDDEN_COLS.has(h)){
           return `<th style="display:none"></th>`;
         }
         if(h === "馬名"){
@@ -704,12 +766,24 @@ function initSpstChildOptions(){
             render: function(data, type, row, meta) {
               const linkIndex = columnMap["link"];
               let url = row[linkIndex] || "#";
-              return `<a href="${url}" target="_blank">${data}</a>`;
+              return `<a href="${url}" target="_blank" rel="noopener">${data}</a>`;
             }
           };
-        } else {
-          return { title: h };
         }
+        if(h === "非凡"){
+          return {
+            title: h,
+            render: function(data, type, row, meta) {
+              const hibonIndex = columnMap["hibon_link"];
+              let url = hibonIndex != null ? (row[hibonIndex] || "") : "";
+              if(url){
+                return `<a href="${url}" target="_blank" rel="noopener">${data}</a>`;
+              }
+              return data;
+            }
+          };
+        }
+        return { title: h };
       });
 
       if($.fn.DataTable.isDataTable("#dataTable")){
@@ -719,7 +793,7 @@ function initSpstChildOptions(){
         data: dataRows,
         columns: columnsDef,
         columnDefs: [
-          { targets: columnMap["link"], visible: false }
+          { targets: headerRow.map((h,i)=>HIDDEN_COLS.has(h)?i:-1).filter(i=>i>=0), visible: false }
         ],
         scrollX: true,
         orderCellsTop: true,
@@ -742,7 +816,7 @@ function initSpstChildOptions(){
                 const $sex = $('<div class="sex-checks">' +
           '<label><input type="checkbox" id="filterMale" checked>牡馬</label>' +
           '<label><input type="checkbox" id="filterFemale" checked>牝馬</label>' +
-          '<label style="margin-left:8px;">因名 ' +
+          '<label style="margin-left:8px;">因子 ' +
             '<select id="filterIname" style="min-width:120px;">' +
               '<option value="">すべて</option>' +
             '</select>' +
@@ -758,6 +832,7 @@ function initSpstChildOptions(){
 
 
         // 「馬名」列を特定（因名抽出元）
+        const factorCol = table.columns().header().toArray().findIndex(h => $(h).text().trim() === '因子');
         const horseNameCol = table.columns().header().toArray().findIndex(h => $(h).text().trim() === '馬名');
 
         // 因名（-漢字2文字-）抽出関数
@@ -767,21 +842,32 @@ function initSpstChildOptions(){
           return m ? m[1] : '';
         }
 
-        // 因名プルダウンを初期化（ユニーク値）
+        // 因子プルダウンを初期化（ユニーク値）
+        // - 因子列は「短 速 底」のようにスペース区切りで1〜3個
+        // - 並びは「3つの因子」→「2つ」→「1つ」→（同数内は辞書順）
         (function initInameDropdown(){
-          if(horseNameCol < 0) return;
+          if(factorCol < 0) return;
           const set = new Set();
+          let hasBlank = false;
           originalData.forEach(r => {
-            const nm = r[horseNameCol];
-            const iname = extractInameFromHorseName(nm);
-            if(iname) set.add(iname);
+            const s = (r[factorCol] ?? "").toString().trim().replace(/\\s+/g,' ');
+            if(!s){ hasBlank = true; return; }
+            set.add(s);
           });
-          const vals = Array.from(set).sort((a,b)=>a.localeCompare(b,'ja'));
+          const vals = Array.from(set).sort((a,b)=>{
+            const ca = a.split(' ').filter(Boolean).length;
+            const cb = b.split(' ').filter(Boolean).length;
+            if(ca !== cb) return cb - ca;
+            return a.localeCompare(b,'ja');
+          });
           const $sel = $('#filterIname');
+          \1if(hasBlank){
+            $sel.append($('<option>').val('__BLANK__').text('（空欄）'));
+          }
           vals.forEach(v => $sel.append($('<option>').val(v).text(v)));
         })();
 
-        const THREE_FACTOR_SET = new Set([
+const THREE_FACTOR_SET = new Set([
           "天煌","天禊","天闘","天靭",
           "央叡","央天","央燕","央獅","央瑚","央瓏","央迅","央魂",
           "煉禊","煌魂",
@@ -813,29 +899,50 @@ const v = (distanceCol >= 0 ? (data[distanceCol] ?? '') : '').toString().trim();
           const hasDistance = v !== '';
 
 
-          // ---- 因名フィルタ ----
-          let iname = '';
-          if(horseNameCol >= 0){
-            iname = extractInameFromHorseName(data[horseNameCol] ?? '');
+	          // ---- 因子フィルタ（組み合わせ/走/中/3因子） ----
+	          // jQuery参照をここで固定（未定義エラー対策）
+	          const $filterIname = $('#filterIname');
+	          const $filterFactorSho = $('#filterSho');
+	          const $filterFactorOu  = $('#filterOu');
+	          const $filter3Only     = $('#filter3');
+
+	          const selFactors = ($filterIname.val() || '').toString().trim(); // 例: "短 速 底"
+	          const fSho = $filterFactorSho.is(':checked');  // 走因子
+	          const fOu  = $filterFactorOu.is(':checked');   // 中因子
+	          const f3   = $filter3Only.is(':checked');      // 3因子のみ
+
+	          const factorsRaw = (factorCol >= 0 ? (data[factorCol] ?? '') : '').toString();
+          const factors = factorsRaw.replace(/\s+/g, ' ').trim();
+          const tokens = factors ? factors.split(' ').filter(Boolean) : [];
+
+          // プルダウン（完全一致）
+          if(selFactors){
+            if(selFactors === '__BLANK__'){
+              if(factors !== '') return false;
+            }else{
+              if(factors !== selFactors) return false;
+            }
           }
 
-          // 因名プルダウン（完全一致）
-          const inameSel = ($('#filterIname').val() ?? '').toString().trim();
-          if(inameSel && iname !== inameSel) return false;
-
-          // 因子チェック（複数ONの場合は OR）
-          const fSho = $('#filterSho').prop('checked');
-          const fOu  = $('#filterOu').prop('checked');
-          const f3   = $('#filter3').prop('checked');
-
-          if(fSho || fOu || f3){
-            let ok = false;
-            if(fSho && iname.includes('翔')) ok = true;
-            if(fOu  && iname.includes('央')) ok = true;
-            if(f3   && THREE_FACTOR_SET.has(iname)) ok = true;
-            if(!ok) return false;
+          // 走因子 / 中因子
+          //  - 片方だけON: その因子を含む必要あり
+          //  - 両方ON: 走 or 中 のどちらかを含めばOK（OR）
+          //  - 3因子のみ表示とはAND（下で判定）
+          if (fSho || fOu) {
+            const hasSho = factors.includes('走');
+            const hasOu  = factors.includes('中');
+            if (fSho && fOu) {
+              if (!(hasSho || hasOu)) return false;
+            } else {
+              if (fSho && !hasSho) return false;
+              if (fOu  && !hasOu)  return false;
+            }
           }
 
+          // 3因子のみ表示（走/中とAND）
+          if(f3){
+            if(tokens.length !== 3) return false;
+          }
 
           // 牡馬のみ：距離がブランクでない
           if(male && !female) sexPass = hasDistance;
@@ -923,10 +1030,28 @@ const v = (distanceCol >= 0 ? (data[distanceCol] ?? '') : '').toString().trim();
         let sel = th.querySelector("select");
         if(!sel) return;
 
-        let uniqueVals = sortCandidates([...new Set(dataRows.map(r => r[colIndex]))] );
-        let opts = "<option value=''>すべて</option>" +
+        const rawVals = dataRows
+          .map(r => (r[colIndex] ?? '').toString())
+          .map(v => v.replace(/\s+/g, ' ').trim());
+        const hasBlank = rawVals.some(v => v === '');
+        let uniqueVals = [...new Set(rawVals.filter(v => v !== ''))];
+
+        if (colName === '因子') {
+          // 3因子 → 2因子 → 1因子 の順、同数は文字列でソート
+          uniqueVals.sort((a, b) => {
+            const ca = a.split(' ').filter(Boolean).length;
+            const cb = b.split(' ').filter(Boolean).length;
+            if (ca !== cb) return cb - ca;
+            return JP_COLLATOR.compare(a, b);
+          });
+        } else {
+          uniqueVals = sortCandidates(uniqueVals);
+        }
+
+        let opts = "<option value=''>すべて</option>" + (hasBlank ? "<option value='__BLANK__'>（空欄）</option>" : "") +
           uniqueVals.map(v => `<option value="${v}">${v}</option>`).join("");
-        sel.innerHTML = opts;
+
+sel.innerHTML = opts;
       });
     }
 
@@ -1056,284 +1181,42 @@ const v = (distanceCol >= 0 ? (data[distanceCol] ?? '') : '').toString().trim();
       table.columns().every(function(colIdx){
         const leftVal  = leftFilters[colIdx];
         const rightVal = rightFilters[colIdx];
+        const leftIsBlank  = (leftVal === '__BLANK__');
+        const rightIsBlank = (rightVal === '__BLANK__');
         let pattern = "";
-        if(colIdx === horseColIndex) {
-          if(leftVal && rightVal){
-            if(leftVal === rightVal){
-              pattern = `.*${leftVal}.*`;
-            } else {
-              pattern = '^$';
-            }
+        if(colIdx === horseColIndex){
+          // 馬名は「包含」検索（既存仕様）
+          if(leftIsBlank && rightIsBlank){
+            pattern = '^\\s*$';
+          } else if(leftIsBlank){
+            pattern = rightVal ? '^$' : '^\\s*$';
+          } else if(rightIsBlank){
+            pattern = leftVal ? '^$' : '^\\s*$';
+          } else if(leftVal && rightVal){
+            pattern = (leftVal === rightVal) ? leftVal : '^$';
           } else if(leftVal){
-            pattern = `.*${leftVal}.*`;
+            pattern = leftVal;
           } else if(rightVal){
-            pattern = `.*${rightVal}.*`;
+            pattern = rightVal;
+          } else {
+            pattern = '';
           }
-        } else {
-          if(leftVal && rightVal){
-            if(leftVal === rightVal){
-              pattern = `^${leftVal}$`;
-            } else {
-              pattern = '^$';
-            }
+        }else{
+          // それ以外は完全一致
+          if(leftIsBlank && rightIsBlank){
+            pattern = '^\\s*$';
+          } else if(leftIsBlank){
+            pattern = rightVal ? '^$' : '^\\s*$';
+          } else if(rightIsBlank){
+            pattern = leftVal ? '^$' : '^\\s*$';
+          } else if(leftVal && rightVal){
+            pattern = (leftVal === rightVal) ? `^${leftVal}$` : '^$';
           } else if(leftVal){
             pattern = `^${leftVal}$`;
           } else if(rightVal){
             pattern = `^${rightVal}$`;
+          } else {
+            pattern = '';
           }
         }
-        this.search(pattern, true, false);
-      });
-
-      table.draw();
-
-      // フィルタ後の行データに合わせて左パネルプルダウンを再生成
-      let dtRows = table.rows({search:'applied'}).data().toArray();
-      updateAllSelects(dtRows);
-    }
-  </script>
-
-<script>
-(function(){
-  const GEN_SLOTS = {
-    2: ["父"],
-    3: ["父父", "母父"],
-    4: ["父父父", "父母父", "母父父", "母母父"],
-    5: ["父父父父", "父父母父", "父母父父", "父母母父", "母父父父", "母父母父", "母母父父", "母母母父"]
-  };
-
-  const GEN_SLOTS_ALL = [...GEN_SLOTS[2], ...GEN_SLOTS[3], ...GEN_SLOTS[4], ...GEN_SLOTS[5]];
-
-
-  function setupTabs(){
-    const btns = document.querySelectorAll(".tabs-left__btn");
-    const panes = document.querySelectorAll(".tabs-left__pane");
-    btns.forEach(btn => {
-      btn.addEventListener("click", () => {
-        btns.forEach(b => b.classList.remove("is-active"));
-        panes.forEach(p => p.classList.remove("is-active"));
-        btn.classList.add("is-active");
-        const id = btn.getAttribute("data-tab");
-        document.getElementById(id).classList.add("is-active");
-      });
-    });
-  }
-
-  // Resolve the right-side DataTable instance
-  function getRightDT(){
-    // Prefer global 'table', else by id 'dataTable'
-    if (window.table && typeof window.table.rows === 'function') return window.table;
-    const node = document.getElementById('dataTable');
-    if (node && $.fn.dataTable.isDataTable(node)) return $(node).DataTable();
-    return null;
-  }
-
-  // Build a header->index map; prefer existing columnMap, else compute from DataTable headers
-  function resolveColumnMap(dt){
-    if (window.columnMap && typeof window.columnMap === 'object') return window.columnMap;
-    const map = {};
-    const headers = dt.columns().header();
-    for (let i=0; i<headers.length; i++){
-      const name = headers[i].textContent.trim();
-      if (name && map[name] === undefined) map[name] = i;
-    }
-    return map;
-  }
-
-  // Collect options from ALL rows for the given slot headers
-  function collectOptionsForSlots(dt, colMap, slotHeaders) {
-const set = new Set();
-    const allRows = dt.rows().data().toArray(); // all rows, unfiltered
-    slotHeaders.forEach(hdr => {
-      const ci = colMap[hdr];
-      if (ci === undefined) return;
-      for (const row of allRows){
-        const v = (row[ci] || '').toString().trim();
-        if (v) set.add(v);
-      
-
-
-
-
-}
-    });
-    return sortCandidates(Array.from(set));
-  }
-
-  function populateSelect(sel, values){
-    const keep = sel.value;
-    sel.innerHTML = '<option value=\"\">選択</option>' +
-      values.map(v=>`<option value=\"${v}\">${v}</option>`).join('');
-    if (keep && values.includes(keep)) sel.value = keep;
-  }
-
-  
-  function buildAllGenerationFilter(dt, colMap, value){
-    const headers = GEN_SLOTS_ALL;
-    const fn = function(settings, data, dataIndex){
-      if (settings.nTable !== dt.table().node()) return true;
-      if (!value) return true;
-      // Accept if value matches ANY of the headers (2〜5代のOR)
-      for (const hdr of headers){
-        const ci = colMap[hdr];
-        if (ci === undefined) continue;
-        const cell = (data[ci] || '').toString().trim();
-        if (cell && cell === value) return true;
-      }
-      return false;
-    };
-    fn.__GEN_FILTER__ = true;
-    return fn;
-  }
-
-  function buildGenerationFilter(dt, colMap, state){
-    const fn = function(settings, data, dataIndex){
-      if (settings.nTable !== dt.table().node()) return true;
-      for (const genKey of Object.keys(state)){
-        const target = state[genKey];
-        if (!target) continue;
-        const slots = GEN_SLOTS[genKey];
-        if (!slots || !slots.length) continue;
-        let ok = false;
-        for (const hdr of slots){
-          const ci = colMap[hdr];
-          if (ci === undefined) continue;
-          const cell = (data[ci] || '').toString().trim();
-          if (cell && cell === target){ ok = true; break; }
-        }
-        if (!ok) return false;
-      }
-      return true;
-    };
-    fn.__GEN_FILTER__ = true;
-    return fn;
-  }
-
-  function onceReady(cb){
-    const start = Date.now();
-    const timer = setInterval(() => {
-      const dt = getRightDT();
-      const ready = !!dt && dt.rows().count() > 0;
-      if (ready){
-        clearInterval(timer);
-        cb(dt);
-      }else if (Date.now() - start > 15000){
-        clearInterval(timer);
-        console.warn('Generation filters: timeout waiting for DataTable data.');
-      }
-    }, 100);
-  }
-
-  document.addEventListener('DOMContentLoaded', function(){
-    setupTabs();
-
-    onceReady(function(dt){
-      const colMap = resolveColumnMap(dt);
-      const gen2 = document.getElementById('gen2Select');
-      const gen3 = document.getElementById('gen3Select');
-      const gen4 = document.getElementById('gen4Select');
-      const gen5 = document.getElementById('gen5Select');
-      const genAll = document.getElementById('genAllSelect');
-      if(!(gen2 && gen3 && gen4 && gen5)) return;
-
-      function rebuildAllGenOptions(){
-        populateSelect(gen2, collectOptionsForSlots(dt, colMap, GEN_SLOTS[2]));
-        populateSelect(gen3, collectOptionsForSlots(dt, colMap, GEN_SLOTS[3]));
-        populateSelect(gen4, collectOptionsForSlots(dt, colMap, GEN_SLOTS[4]));
-        populateSelect(gen5, collectOptionsForSlots(dt, colMap, GEN_SLOTS[5]));
-        if (genAll) populateSelect(genAll, collectOptionsForSlots(dt, colMap, GEN_SLOTS_ALL));
-      }
-      rebuildAllGenOptions();
-
-      const state = { 2:'', 3:'', 4:'', 5:'' };
-      let allVal = '';
-      function applyGenFilter(){
-        $.fn.dataTable.ext.search = $.fn.dataTable.ext.search.filter(fn => !fn.__GEN_FILTER__);
-        if (allVal){
-          $.fn.dataTable.ext.search.push(buildAllGenerationFilter(dt, colMap, allVal));
-        } else if (Object.values(state).some(v=>!!v)){
-          $.fn.dataTable.ext.search.push(buildGenerationFilter(dt, colMap, state));
-        }
-        dt.draw();
-      }
-
-      [['2',gen2],['3',gen3],['4',gen4],['5',gen5]].forEach(([k,sel])=>{
-        sel.addEventListener('change', e => {
-          state[k] = e.target.value.trim();
-          if (state[k]){ allVal = ''; if(genAll) genAll.value=''; }
-          applyGenFilter();
-        });
-      });
-
-      if (genAll){
-        genAll.addEventListener('change', e => {
-          allVal = e.target.value.trim();
-          if (allVal){
-            state['2']=state['3']=state['4']=state['5']='';
-            gen2.value = gen3.value = gen4.value = gen5.value = '';
-          }
-          applyGenFilter();
-        });
-      }
-
-      const clearBtn = document.getElementById('btnGenClear');
-      if (clearBtn){
-        clearBtn.addEventListener('click', ()=>{
-          state['2']=state['3']=state['4']=state['5']='';
-          gen2.value = gen3.value = gen4.value = gen5.value = '';
-          if (genAll){ allVal=''; genAll.value=''; }
-          applyGenFilter();
-        });
-      }
-
-      // If the underlying data is reloaded (Ajax), refresh options again
-      $(dt.table().node()).on('xhr.dt', function(){ setTimeout(rebuildAllGenOptions, 0); });
-    });
-  });
-})();
-</script>
-
-
-<script>
-// -- Unified candidate sorter: Japanese < English(ASCII Latin-only) < Others; within Japanese, 'ウ' < 'ヴ'
-(function(){
-  if (window.__HAS_SORT_CANDIDATES__) return;
-  window.__HAS_SORT_CANDIDATES__ = true;
-
-  window.sortCandidates = function(inputArr){
-    const collJaBase = new Intl.Collator('ja', { usage: 'sort', sensitivity: 'base', numeric: true });
-    const collJaVar  = new Intl.Collator('ja', { usage: 'sort', sensitivity: 'variant', numeric: true });
-    const collEn     = new Intl.Collator('en', { usage: 'sort', sensitivity: 'base', numeric: true });
-    const stripZW = (s) => (s || '').replace(/[\u200B-\u200D\uFEFF]/g, '');
-    const normalize = (s) => stripZW((s || '').normalize('NFKC').trim());
-    const hasJapanese = (s) => /[\u3040-\u30FF\u4E00-\u9FFF]/.test(s); // kana/hira/kanji
-    const isAsciiLatinOnly = (s) => /^[\x00-\x7F]*[A-Za-z][\x00-\x7F]*$/.test(s);
-
-    const arr = Array.from(inputArr || []);
-    arr.sort((aRaw, bRaw) => {
-      const a = normalize(aRaw);
-      const b = normalize(bRaw);
-      const ga = hasJapanese(a) ? 0 : (isAsciiLatinOnly(a) ? 1 : 2);
-      const gb = hasJapanese(b) ? 0 : (isAsciiLatinOnly(b) ? 1 : 2);
-      if (ga !== gb) return ga - gb;
-
-      if (ga === 0) {
-        const baseCmp = collJaBase.compare(a, b);
-        if (baseCmp !== 0) return baseCmp;
-        const aHasVu = a.includes('ヴ');
-        const bHasVu = b.includes('ヴ');
-        if (aHasVu !== bHasVu) return aHasVu ? 1 : -1;
-        return collJaVar.compare(a, b);
-      }
-      if (ga === 1) {
-        return collEn.compare(a, b);
-      }
-      return collJaVar.compare(a, b);
-    });
-    return arr;
-  };
-})();
-</script>
-
-</body>
-</html>
+        >
