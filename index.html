@@ -823,6 +823,8 @@ headerRow.forEach((col, i) => {
           '</label>' +
           '<label style="margin-left:8px;"><input type="checkbox" id="filterSho">走因子</label>' +
           '<label style="margin-left:8px;"><input type="checkbox" id="filterOu">中因子</label>' +
+          '<label style="margin-left:8px;"><input type="checkbox" id="filterKyo">強因子</label>' +
+          '<label style="margin-left:8px;"><input type="checkbox" id="filterRai">雷因子</label>' +
           '<label style="margin-left:8px;"><input type="checkbox" id="filter3">3因子のみ表示</label>' +
         '</div>');
         $('.dt-sex-filter').empty().append($sex);
@@ -901,11 +903,15 @@ const v = (distanceCol >= 0 ? (data[distanceCol] ?? '') : '').toString().trim();
 	          const $filterIname = $('#filterIname');
 	          const $filterFactorSho = $('#filterSho');
 	          const $filterFactorOu  = $('#filterOu');
+	          const $filterFactorKyo = $('#filterKyo');
+	          const $filterFactorRai = $('#filterRai');
 	          const $filter3Only     = $('#filter3');
 
 	          const selFactors = ($filterIname.val() || '').toString().trim(); // 例: "短 速 底"
 	          const fSho = $filterFactorSho.is(':checked');  // 走因子
 	          const fOu  = $filterFactorOu.is(':checked');   // 中因子
+	          const fKyo = $filterFactorKyo.is(':checked');  // 強因子
+	          const fRai = $filterFactorRai.is(':checked');  // 雷因子
 	          const f3   = $filter3Only.is(':checked');      // 3因子のみ
 
 	          const factorsRaw = (factorCol >= 0 ? (data[factorCol] ?? '') : '').toString();
@@ -915,22 +921,26 @@ const v = (distanceCol >= 0 ? (data[distanceCol] ?? '') : '').toString().trim();
           // プルダウン（完全一致）
           if(selFactors && factors !== selFactors) return false;
 
-          // 走因子 / 中因子
-          //  - 片方だけON: その因子を含む必要あり
-          //  - 両方ON: 走 or 中 のどちらかを含めばOK（OR）
+          // 走因子 / 中因子 / 強因子 / 雷因子
+          //  - 1つだけON: その因子を含む必要あり
+          //  - 複数ON: 選択された因子のいずれかを含めばOK（OR）
           //  - 3因子のみ表示とはAND（下で判定）
-          if (fSho || fOu) {
+          if (fSho || fOu || fKyo || fRai) {
             const hasSho = factors.includes('走');
             const hasOu  = factors.includes('中');
-            if (fSho && fOu) {
-              if (!(hasSho || hasOu)) return false;
-            } else {
-              if (fSho && !hasSho) return false;
-              if (fOu  && !hasOu)  return false;
-            }
+            const hasKyo = factors.includes('強');
+            const hasRai = factors.includes('雷');
+
+            const factorPass =
+              (fSho && hasSho) ||
+              (fOu  && hasOu)  ||
+              (fKyo && hasKyo) ||
+              (fRai && hasRai);
+
+            if (!factorPass) return false;
           }
 
-          // 3因子のみ表示（走/中とAND）
+          // 3因子のみ表示（因子チェックとはAND）
           if(f3){
             if(tokens.length !== 3) return false;
           }
@@ -944,7 +954,7 @@ const v = (distanceCol >= 0 ? (data[distanceCol] ?? '') : '').toString().trim();
           return sexPass;
         });
 
-        $('#filterMale, #filterFemale, #filterIname, #filterSho, #filterOu, #filter3').on('change', function(){
+        $('#filterMale, #filterFemale, #filterIname, #filterSho, #filterOu, #filterKyo, #filterRai, #filter3').on('change', function(){
           table.draw();
         });
       })();
