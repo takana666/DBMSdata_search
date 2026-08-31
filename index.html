@@ -20,6 +20,10 @@
       margin-bottom: 20px;
       font-size: 14px;
     }
+    #downloadCsvBtn {
+      padding: 6px 12px;
+      cursor: pointer;
+    }
     .container {
       display: flex;
     }
@@ -261,6 +265,7 @@
   <div id="release-info">
     <p>2025/02/11：リリース</p>
     <p id="update-date">データ最終更新日：不明</p>
+    <button type="button" id="downloadCsvBtn" disabled>使用CSVをダウンロード</button>
   </div>
 
   <div class="container">
@@ -466,9 +471,11 @@
     let table;
     let columnMap = {};
     let originalData = [];
+    let loadedCsvText = "";
+    const EMPTY_FILTER_TOKEN = "__DBMS_EMPTY__";
 
     // 右側のプルダウン用列（「馬名」以外は既存通り）
-    const filterHeaders = ["系統","親系統","子系統","距離","成長","適応力","体質","気性","実績","底力","安定","非凡種類","天性"];
+    const filterHeaders = ["系統","親系統","子系統","距離","成長","適応力","脚質","体質","気性","実績","底力","安定","非凡種類","天性"];
 
       // 右テーブルで非表示にする列（CSV上は保持）
       const HIDDEN_COLS = new Set([
@@ -522,8 +529,32 @@
           document.getElementById("update-date").innerText = "データ最終更新日：" + dateStr;
           return res.text();
         })
-        .then(csvText => initTable(csvText))
+        .then(csvText => {
+          loadedCsvText = csvText;
+          initTable(csvText);
+          const btn = document.getElementById("downloadCsvBtn");
+          if(btn) btn.disabled = false;
+        })
         .catch(err => console.error("CSV読み込み失敗:", err));
+
+      const downloadBtn = document.getElementById("downloadCsvBtn");
+      if(downloadBtn){
+        downloadBtn.addEventListener("click", () => {
+          if(!loadedCsvText) return;
+          const csvText = loadedCsvText.charCodeAt(0) === 0xFEFF
+            ? loadedCsvText
+            : "\uFEFF" + loadedCsvText;
+          const blob = new Blob([csvText], {type: "text/csv;charset=utf-8"});
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = (CSV_URL.split("/").pop() || "mydata.csv");
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+        });
+      }
     });
       // =========================
       // SPST子系統（子系統列フィルタ）
@@ -884,6 +915,7 @@ headerRow.forEach((col, i) => {
             '<label style="margin-left:8px;"><input type="checkbox" id="filterOu">中因子</label>' +
             '<label style="margin-left:8px;"><input type="checkbox" id="filterKyo">強因子</label>' +
             '<label style="margin-left:8px;"><input type="checkbox" id="filterRai">雷因子</label>' +
+            '<label style="margin-left:8px;"><input type="checkbox" id="filterTek">適因子</label>' +
             '<label style="margin-left:8px;"><input type="checkbox" id="filter3">3因子のみ表示</label>' +
           '</div>' +
           '<div class="distance-filter-row">' +
@@ -1002,6 +1034,7 @@ const v = (distanceCol >= 0 ? (data[distanceCol] ?? '') : '').toString().trim();
 	          const $filterFactorOu  = $('#filterOu');
 	          const $filterFactorKyo = $('#filterKyo');
 	          const $filterFactorRai = $('#filterRai');
+	          const $filterFactorTek = $('#filterTek');
 	          const $filter3Only     = $('#filter3');
 
 	          const selFactors = ($filterIname.val() || '').toString().trim(); // 例: "短 速 底"
@@ -1009,6 +1042,7 @@ const v = (distanceCol >= 0 ? (data[distanceCol] ?? '') : '').toString().trim();
 	          const fOu  = $filterFactorOu.is(':checked');   // 中因子
 	          const fKyo = $filterFactorKyo.is(':checked');  // 強因子
 	          const fRai = $filterFactorRai.is(':checked');  // 雷因子
+	          const fTek = $filterFactorTek.is(':checked');  // 適因子
 	          const f3   = $filter3Only.is(':checked');      // 3因子のみ
 
 	          const factorsRaw = (factorCol >= 0 ? (data[factorCol] ?? '') : '').toString();
@@ -1071,21 +1105,23 @@ const v = (distanceCol >= 0 ? (data[distanceCol] ?? '') : '').toString().trim();
           // プルダウン（完全一致）
           if(selFactors && factors !== selFactors) return false;
 
-          // 走因子 / 中因子 / 強因子 / 雷因子
+          // 走因子 / 中因子 / 強因子 / 雷因子 / 適因子
           //  - 1つだけON: その因子を含む必要あり
           //  - 複数ON: 選択された因子のいずれかを含めばOK（OR）
           //  - 3因子のみ表示とはAND（下で判定）
-          if (fSho || fOu || fKyo || fRai) {
-            const hasSho = factors.includes('走');
-            const hasOu  = factors.includes('中');
-            const hasKyo = factors.includes('強');
-            const hasRai = factors.includes('雷');
+          if (fSho || fOu || fKyo || fRai || fTek) {
+            const hasSho = tokens.includes('走');
+            const hasOu  = tokens.includes('中');
+            const hasKyo = tokens.includes('強');
+            const hasRai = tokens.includes('雷');
+            const hasTek = tokens.includes('適');
 
             const factorPass =
               (fSho && hasSho) ||
               (fOu  && hasOu)  ||
               (fKyo && hasKyo) ||
-              (fRai && hasRai);
+              (fRai && hasRai) ||
+              (fTek && hasTek);
 
             if (!factorPass) return false;
           }
@@ -1104,7 +1140,7 @@ const v = (distanceCol >= 0 ? (data[distanceCol] ?? '') : '').toString().trim();
           return sexPass;
         });
 
-        $('#filterMale, #filterFemale, #filterIname, #filterSho, #filterOu, #filterKyo, #filterRai, #filter3, #filterDistanceMin, #filterDistanceMax, #filterDistanceExact, #filterDistanceWithin1000, #filterDistanceOver1000').on('change', function(){
+        $('#filterMale, #filterFemale, #filterIname, #filterSho, #filterOu, #filterKyo, #filterRai, #filterTek, #filter3, #filterDistanceMin, #filterDistanceMax, #filterDistanceExact, #filterDistanceWithin1000, #filterDistanceOver1000').on('change', function(){
           table.draw();
         });
       })();
@@ -1197,8 +1233,11 @@ const v = (distanceCol >= 0 ? (data[distanceCol] ?? '') : '').toString().trim();
           uniqueVals = sortCandidates(uniqueVals);
         }
 
-        let opts = "<option value=''>すべて</option>" +
-          uniqueVals.map(v => `<option value="${v}">${v}</option>`).join("");
+        let opts = "<option value=''>すべて</option>";
+        if(colName === "非凡種類"){
+          opts += `<option value="${EMPTY_FILTER_TOKEN}">非凡なし</option>`;
+        }
+        opts += uniqueVals.map(v => `<option value="${v}">${v}</option>`).join("");
 
 sel.innerHTML = opts;
       });
@@ -1344,7 +1383,10 @@ sel.innerHTML = opts;
             pattern = `.*${rightVal}.*`;
           }
         } else {
-          if(leftVal && rightVal){
+          // 「非凡なし」など、空欄セルを明示的に検索するための専用トークン
+          if(rightVal === EMPTY_FILTER_TOKEN){
+            pattern = '^$';
+          } else if(leftVal && rightVal){
             if(leftVal === rightVal){
               pattern = `^${leftVal}$`;
             } else {
