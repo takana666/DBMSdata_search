@@ -20,10 +20,6 @@
       margin-bottom: 20px;
       font-size: 14px;
     }
-    #downloadCsvBtn {
-      padding: 6px 12px;
-      cursor: pointer;
-    }
     .container {
       display: flex;
     }
@@ -64,6 +60,72 @@
     }
     .dataTable {
       width: 100%;
+    }
+
+    /* CSVダウンロード */
+    .csv-download-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+    }
+    .csv-download-actions button {
+      padding: 6px 12px;
+      cursor: pointer;
+    }
+
+    /* 右テーブル1行目ヘッダは縦書き。
+       DataTables の scrollX が作る複製ヘッダにも同じ指定を適用する。
+       pa:/chi: は接頭辞だけ横書き、その後ろの血統位置だけ縦書き。 */
+    #dataTable thead tr.header-label-row th,
+    .dataTables_scrollHead thead tr.header-label-row th {
+      text-align: center !important;
+      vertical-align: bottom !important;
+      height: 132px !important;
+      padding: 6px 4px !important;
+      white-space: normal !important;
+      line-height: 1.1;
+    }
+    #dataTable .header-vertical,
+    .dataTables_scrollHead .header-vertical {
+      display: inline-block !important;
+      writing-mode: vertical-rl !important;
+      -webkit-writing-mode: vertical-rl !important;
+      text-orientation: upright !important;
+      white-space: nowrap !important;
+      line-height: 1.15;
+      letter-spacing: 0.04em;
+    }
+    #dataTable .header-mixed,
+    .dataTables_scrollHead .header-mixed {
+      display: inline-flex !important;
+      flex-direction: column !important;
+      align-items: center !important;
+      justify-content: flex-end !important;
+      gap: 4px;
+      height: 100%;
+      writing-mode: horizontal-tb !important;
+    }
+    #dataTable .header-prefix,
+    .dataTables_scrollHead .header-prefix {
+      display: block !important;
+      writing-mode: horizontal-tb !important;
+      -webkit-writing-mode: horizontal-tb !important;
+      text-orientation: mixed !important;
+      white-space: nowrap !important;
+      line-height: 1;
+      font-size: 0.88em;
+    }
+    #dataTable thead tr.header-filter-row th,
+    .dataTables_scrollHead thead tr.header-filter-row th {
+      height: auto !important;
+      writing-mode: horizontal-tb !important;
+      -webkit-writing-mode: horizontal-tb !important;
+      text-orientation: mixed !important;
+      vertical-align: middle !important;
+      white-space: normal !important;
+      padding-top: 4px !important;
+      padding-bottom: 4px !important;
     }
 
     /* DataTables 上部配置（左=牡馬/牝馬, 右=show entries + search） */
@@ -265,7 +327,10 @@
   <div id="release-info">
     <p>2025/02/11：リリース</p>
     <p id="update-date">データ最終更新日：不明</p>
-    <button type="button" id="downloadCsvBtn" disabled>使用CSVをダウンロード</button>
+    <div class="csv-download-actions">
+      <button type="button" id="downloadAllCsvBtn" disabled>全データをDL</button>
+      <button type="button" id="downloadFilteredCsvBtn" disabled>検索結果をDL</button>
+    </div>
   </div>
 
   <div class="container">
@@ -472,6 +537,7 @@
     let columnMap = {};
     let originalData = [];
     let loadedCsvText = "";
+    let loadedCsvHeader = [];
     const EMPTY_FILTER_TOKEN = "__DBMS_EMPTY__";
 
     // 右側のプルダウン用列（「馬名」以外は既存通り）
@@ -532,27 +598,58 @@
         .then(csvText => {
           loadedCsvText = csvText;
           initTable(csvText);
-          const btn = document.getElementById("downloadCsvBtn");
-          if(btn) btn.disabled = false;
+          const allBtn = document.getElementById("downloadAllCsvBtn");
+          const filteredBtn = document.getElementById("downloadFilteredCsvBtn");
+          if(allBtn) allBtn.disabled = false;
+          if(filteredBtn) filteredBtn.disabled = false;
         })
         .catch(err => console.error("CSV読み込み失敗:", err));
 
-      const downloadBtn = document.getElementById("downloadCsvBtn");
-      if(downloadBtn){
-        downloadBtn.addEventListener("click", () => {
+      function downloadCsvText(csvText, filename){
+        if(!csvText) return;
+        const withBom = csvText.charCodeAt(0) === 0xFEFF ? csvText : "\uFEFF" + csvText;
+        const blob = new Blob([withBom], {type: "text/csv;charset=utf-8"});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+
+      function csvEscape(value){
+        const s = (value ?? "").toString();
+        return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+      }
+
+      function buildCsvText(headers, rows){
+        const lines = [];
+        lines.push(headers.map(csvEscape).join(","));
+        rows.forEach(row => {
+          const arr = Array.from(row || []);
+          lines.push(headers.map((_, i) => csvEscape(arr[i] ?? "")).join(","));
+        });
+        return lines.join("\r\n");
+      }
+
+      const downloadAllBtn = document.getElementById("downloadAllCsvBtn");
+      if(downloadAllBtn){
+        downloadAllBtn.addEventListener("click", () => {
           if(!loadedCsvText) return;
-          const csvText = loadedCsvText.charCodeAt(0) === 0xFEFF
-            ? loadedCsvText
-            : "\uFEFF" + loadedCsvText;
-          const blob = new Blob([csvText], {type: "text/csv;charset=utf-8"});
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = (CSV_URL.split("/").pop() || "mydata.csv");
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-          URL.revokeObjectURL(url);
+          downloadCsvText(loadedCsvText, (CSV_URL.split("/").pop() || "mydata.csv"));
+        });
+      }
+
+      const downloadFilteredBtn = document.getElementById("downloadFilteredCsvBtn");
+      if(downloadFilteredBtn){
+        downloadFilteredBtn.addEventListener("click", () => {
+          if(!table || !loadedCsvHeader.length) return;
+          // 現在の全フィルタを通過した全件を、現在の並び順で取得。ページ表示件数には依存しない。
+          const rows = table.rows({search: "applied", order: "applied"}).data().toArray();
+          const csvText = buildCsvText(loadedCsvHeader, rows);
+          downloadCsvText(csvText, "mydata_search_results.csv");
         });
       }
     });
@@ -808,6 +905,7 @@ function initSpstChildOptions(){
 
     const parsedRows = parseCSVRobust(csvText);
     const headerRow = (parsedRows[0] || []).map(h => String(h || '').replace(/^\uFEFF/, '').trim());
+    loadedCsvHeader = headerRow.slice();
     const dataRows = (parsedRows.slice(1) || []).map(r => {
       const rr = r.slice(0, headerRow.length);
       while (rr.length < headerRow.length) rr.push("");
@@ -827,11 +925,34 @@ headerRow.forEach((col, i) => {
 
 
       // DataTablesヘッダー生成（1行目=列名, 2行目=フィルタ<select>）
-      // ※「link」列は非表示
-      let firstRow = "<tr>" + headerRow.map(h => {
-        return HIDDEN_COLS.has(h) ? `<th style="display:none">${h}</th>` : `<th>${h}</th>`;
+      // 1行目は原則縦書き。pa:/chi: は接頭辞だけ横書きで、その後ろだけ縦書き。
+      function escapeHtml(text){
+        return String(text ?? "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+      function headerLabelHtml(h){
+        const text = String(h ?? "");
+        if(text.startsWith("pa:")){
+          return `<span class="header-mixed"><span class="header-prefix">pa:</span><span class="header-vertical">${escapeHtml(text.slice(3))}</span></span>`;
+        }
+        if(text.startsWith("chi:")){
+          return `<span class="header-mixed"><span class="header-prefix">chi:</span><span class="header-vertical">${escapeHtml(text.slice(4))}</span></span>`;
+        }
+        return `<span class="header-vertical">${escapeHtml(text)}</span>`;
+      }
+
+      // ※「link」列などは非表示
+      let firstRow = "<tr class='header-label-row'>" + headerRow.map((h, i) => {
+        const idxAttr = ` data-header-index="${i}"`;
+        return HIDDEN_COLS.has(h)
+          ? `<th${idxAttr} style="display:none">${headerLabelHtml(h)}</th>`
+          : `<th${idxAttr}>${headerLabelHtml(h)}</th>`;
       }).join("") + "</tr>";
-      let secondRow = "<tr>" + headerRow.map(h => {
+      let secondRow = "<tr class='header-filter-row'>" + headerRow.map(h => {
         if(HIDDEN_COLS.has(h)){
           return `<th style="display:none"></th>`;
         }
@@ -851,7 +972,6 @@ headerRow.forEach((col, i) => {
       let columnsDef = headerRow.map((h, idx) => {
         if(h === "馬名"){
           return {
-            title: h,
             render: function(data, type, row, meta) {
               const linkIndex = columnMap["link"];
               let url = row[linkIndex] || "#";
@@ -861,7 +981,6 @@ headerRow.forEach((col, i) => {
         }
         if(h === "非凡"){
           return {
-            title: h,
             render: function(data, type, row, meta) {
               const hibonIndex = columnMap["hibon_link"];
               let url = hibonIndex != null ? (row[hibonIndex] || "") : "";
@@ -872,7 +991,7 @@ headerRow.forEach((col, i) => {
             }
           };
         }
-        return { title: h };
+        return {};
       });
 
       if($.fn.DataTable.isDataTable("#dataTable")){
@@ -889,10 +1008,27 @@ headerRow.forEach((col, i) => {
         dom: '<"dt-top"<"dt-sex-filter"><"dt-right"lf>>rt<"bottom"ip><"clear">',
       });
 
+      // DataTables初期化後も縦書きヘッダHTMLを確実に保持する。
+      // scrollX:true の場合、画面に見えているヘッダは .dataTables_scrollHead 側の複製なので両方へ反映する。
+      function applyVerticalHeaderLabels(){
+        document.querySelectorAll(
+          "#dataTable thead tr.header-label-row th[data-header-index], " +
+          ".dataTables_scrollHead thead tr.header-label-row th[data-header-index]"
+        ).forEach(th => {
+          const i = Number(th.getAttribute("data-header-index"));
+          if(Number.isInteger(i) && headerRow[i] !== undefined){
+            th.innerHTML = headerLabelHtml(headerRow[i]);
+          }
+        });
+      }
+      applyVerticalHeaderLabels();
+      requestAnimationFrame(applyVerticalHeaderLabels);
+
       // (v7) DataTables描画後に左パネル（血統表/親系統/子系統）プルダウンを常に同期
       // SPST子系統など table.draw() のみで更新されるケースでも、検索適用後データに追随させる
       table.on('draw', function(){
         try{
+          applyVerticalHeaderLabels();
           let dtRows = table.rows({search:'applied'}).data().toArray();
           updateAllSelects(dtRows);
         }catch(e){}
