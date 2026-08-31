@@ -74,10 +74,11 @@
       cursor: pointer;
     }
 
-    /* 右テーブル1行目ヘッダは縦書き。
-       DataTables の scrollX が作る複製ヘッダにも同じ指定を適用する。
+    /* 右テーブルの「画面に見える」ヘッダだけを縦書きにする。
+       scrollX:true の DataTables は .dataTables_scrollHead に表示用ヘッダを複製し、
+       #dataTable 側の thead は列幅計算用として scrollBody 内に残す。
+       後者へ高さを指定すると二重ヘッダになるため、絶対に対象にしない。
        pa:/chi: は接頭辞だけ横書き、その後ろの血統位置だけ縦書き。 */
-    #dataTable thead tr.header-label-row th,
     .dataTables_scrollHead thead tr.header-label-row th {
       text-align: center !important;
       vertical-align: bottom !important;
@@ -86,7 +87,6 @@
       white-space: normal !important;
       line-height: 1.1;
     }
-    #dataTable .header-vertical,
     .dataTables_scrollHead .header-vertical {
       display: inline-block !important;
       writing-mode: vertical-rl !important;
@@ -96,7 +96,6 @@
       line-height: 1.15;
       letter-spacing: 0.04em;
     }
-    #dataTable .header-mixed,
     .dataTables_scrollHead .header-mixed {
       display: inline-flex !important;
       flex-direction: column !important;
@@ -106,7 +105,6 @@
       height: 100%;
       writing-mode: horizontal-tb !important;
     }
-    #dataTable .header-prefix,
     .dataTables_scrollHead .header-prefix {
       display: block !important;
       writing-mode: horizontal-tb !important;
@@ -116,7 +114,6 @@
       line-height: 1;
       font-size: 0.88em;
     }
-    #dataTable thead tr.header-filter-row th,
     .dataTables_scrollHead thead tr.header-filter-row th {
       height: auto !important;
       writing-mode: horizontal-tb !important;
@@ -1008,11 +1005,10 @@ headerRow.forEach((col, i) => {
         dom: '<"dt-top"<"dt-sex-filter"><"dt-right"lf>>rt<"bottom"ip><"clear">',
       });
 
-      // DataTables初期化後も縦書きヘッダHTMLを確実に保持する。
-      // scrollX:true の場合、画面に見えているヘッダは .dataTables_scrollHead 側の複製なので両方へ反映する。
+      // DataTables初期化後、画面に見える scrollHead 側だけヘッダHTMLを整える。
+      // #dataTable 側のtheadは列幅計算用なので触らない（触ると二重ヘッダになる）。
       function applyVerticalHeaderLabels(){
         document.querySelectorAll(
-          "#dataTable thead tr.header-label-row th[data-header-index], " +
           ".dataTables_scrollHead thead tr.header-label-row th[data-header-index]"
         ).forEach(th => {
           const i = Number(th.getAttribute("data-header-index"));
