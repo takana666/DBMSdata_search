@@ -344,7 +344,7 @@
 
 
   <style>
-    /* ===== LLM連携タブ (dbms-search-v1 / v1.1) ===== */
+    /* ===== LLM連携タブ (dbms-search-v1 / schema 1.2, v1.1互換) ===== */
     #tab-llm .llm-box {
       border: 1px solid #ddd;
       border-radius: 8px;
@@ -406,6 +406,14 @@
       margin:0 4px 4px 0;
       background:#fff;
     }
+    #tab-llm .llm-ranking { font-size:12px; line-height:1.5; }
+    #tab-llm .llm-rank-item { border-top:1px solid #eee; padding:7px 0; }
+    #tab-llm .llm-rank-item:first-child { border-top:0; }
+    #tab-llm .llm-rank-head { font-weight:700; display:flex; justify-content:space-between; gap:8px; }
+    #tab-llm .llm-rank-reasons { color:#555; margin-top:3px; overflow-wrap:anywhere; }
+    #tab-llm .llm-selftest { white-space:pre-wrap; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:11px; }
+    #tab-llm details > summary { cursor:pointer; font-size:12px; }
+
   </style>
 
 </head>
@@ -612,7 +620,7 @@
         <div class="llm-box">
           <div class="llm-title">GPTから受け取った検索条件</div>
           <div class="llm-note">
-            <code>dbms-search-v1</code>（schema 1.1.0）の検索JSONを貼り付けるか、
+            <code>dbms-search-v1</code>（schema 1.2.0 / 1.1.0互換）の検索JSONを貼り付けるか、
             <code>#dbms=&lt;BASE64URL_UTF8_JSON&gt;</code> 付きURLでこのページを開いてください。<br>
             LLM条件を適用すると、通常の手動検索条件はいったんクリアしてから検索します。
           </div>
@@ -622,6 +630,7 @@
             <button type="button" id="llmSampleBtn">サンプルを入力</button>
             <button type="button" id="llmCopyUrlBtn">検索URLをコピー</button>
             <button type="button" id="llmClearBtn">LLM条件を解除</button>
+            <button type="button" id="llmSelfTestBtn">自己診断</button>
           </div>
         </div>
 
@@ -638,10 +647,20 @@
           </div>
         </div>
 
+        <div class="llm-box" id="llmRankingBox" style="display:none;">
+          <div class="llm-title">上位結果・評価理由</div>
+          <div class="llm-note">preferences がある場合は重み付きスコアで順位付けします。result.sort がある場合は明示ソートを優先します。</div>
+          <div id="llmRanking" class="llm-ranking"></div>
+        </div>
+
         <div class="llm-box">
           <div class="llm-title">受信条件</div>
           <div id="llmBadges"></div>
           <pre id="llmPreview">（未受信）</pre>
+          <details style="margin-top:8px;">
+            <summary>自己診断結果</summary>
+            <div id="llmSelfTest" class="llm-selftest">未実行</div>
+          </details>
         </div>
       </div>
 </div>
@@ -2183,18 +2202,21 @@ const set = new Set();
 
 <script>
 /* ============================================================
-   DBMS LLM bridge - dbms-search-v1 / schema 1.1.0
+   DBMS LLM bridge - dbms-search-v1 / schema 1.2.0 (1.1互換)
    - URL fragment: #dbms=<BASE64URL_UTF8_JSON>
    - JSON paste/import
    - strict-ish validation (no eval / no arbitrary regex)
    - constraints evaluator for v1.1 selectors/operators
-   - preferences are received/displayed; score ranking is a later phase
+   - preferences ranking / result.sort / result.limit / reasons / self-test
    ============================================================ */
 (function(){
   'use strict';
 
   const DBMS_LLM_PROTOCOL = 'dbms-search-v1';
-  const DBMS_LLM_SCHEMA = '1.1.0';
+  const DBMS_LLM_SCHEMA = '1.2.0';
+  const DBMS_LLM_ACCEPTED_SCHEMAS = new Set(['1.1.0','1.2.0']);
+  const DBMS_LLM_RESULT_LIMIT_MAX = 5000;
+  const DBMS_LLM_URL_SOFT_LIMIT = 7000;
   const DBMS_LLM_MAX_BYTES = 32768;
   const DBMS_LLM_MAX_NODES = 100;
   const DBMS_LLM_MAX_DEPTH = 8;
@@ -2216,7 +2238,13 @@ const set = new Set();
   const METRICS = new Set([
     'self_factor_count','pedigree_factor_count','pedigree_factor_distinct_count','pedigree_horse_count',
     'child_line_count','child_line_distinct_count','sp_child_line_count','st_child_line_count',
-    'major_line_count','major_line_distinct_count','child_line_transition_count','remaining_factor_count_after_advance'
+    'major_line_count','major_line_distinct_count','child_line_transition_count','remaining_factor_count_after_advance',
+    'sp_child_line_distinct_count','st_child_line_distinct_count','spst_child_line_count','spst_child_line_distinct_count',
+    'remaining_child_line_count_after_advance','remaining_child_line_distinct_count_after_advance',
+    'remaining_sp_child_line_count_after_advance','remaining_sp_child_line_distinct_count_after_advance',
+    'remaining_st_child_line_count_after_advance','remaining_st_child_line_distinct_count_after_advance',
+    'remaining_spst_child_line_count_after_advance','remaining_spst_child_line_distinct_count_after_advance',
+    'remaining_major_line_count_after_advance','remaining_major_line_distinct_count_after_advance'
   ]);
 
   const GEN_SLOTS_LLM = {
@@ -2231,6 +2259,16 @@ const set = new Set();
   const SP_LINES = new Set(['ハビタット','ボールドルーラー','フェアトライアル','クラリオン','プリンスビオ','トムフール','エクリプス','ダンテ','オーエンテューダー','ニアークティック','ネアルコ','インテント','ブランドフォード']);
   const ST_LINES = new Set(['ハイペリオン','ブレニム','ネヴァーセイダイ','プリンスキロ','モスボロー','サーゲイロード','ヒムヤー','テディ','オリオール','フォルティノ','ナスルーラ','ニアークティック','フェアウェイ']);
   const MAJOR_LINES = new Set(['ブランドフォード','レイズアネイティヴ','ヘイルトゥリーズン','ファイントップ','プリンスリーギフト','マイバブー','ノーザンダンサー']);
+  const SPST_LINES = new Set([...SP_LINES, ...ST_LINES]);
+  const ACCEPTED_SLOTS = new Set(['self', ...PED_SLOTS_LLM]);
+  const DIRECT_FIELDS = new Set(['馬名','base_name','iname','因子','子系統','距離','成長','適応力','脚質','体質','気性','実績','底力','安定','非凡種類','非凡','天性']);
+  const PREF_GOALS = new Set(['maximize','minimize','prefer_values','avoid_values']);
+  const SCALAR_OPS = new Set(['equals','not_equals','contains','in','not_in','is_empty','is_not_empty']);
+  const COLLECTION_OPS = new Set(['equals','not_equals','contains','in','not_in','is_empty','is_not_empty','has','has_any','has_all','count_eq','count_gte','count_lte','distinct_count_eq','distinct_count_gte','multiset_equals']);
+  const NUMERIC_OPS = new Set(['eq','gt','gte','lt','lte','metric_eq','metric_gte','metric_lte']);
+  const COMPARE_OPS = new Set(['overlaps','disjoint','same_set','same_multiset','left_contains_all_right']);
+  const DISTANCE_OPS = new Set(['range_contains','range_equals','range_width_lte','range_width_gt','is_empty','is_not_empty']);
+
 
   let activePayload = null;
   let llmMatchMask = null;
@@ -2238,6 +2276,7 @@ const set = new Set();
   let llmFilterInstalled = false;
   let llmAutoLoaded = false;
   let llmSearchToken = 0;
+  let llmSavedOrder = null;
 
   function getDT(){
     try{
@@ -2468,7 +2507,25 @@ const set = new Set();
     return includeSelf ? ['self',...PED_SLOTS_LLM] : [...PED_SLOTS_LLM];
   }
 
+  function remainingSlotsAfterAdvance(advance){
+    const a=Math.max(0,Math.min(4,Number(advance||0)));
+    const maxGen=5-a;
+    const gens=[]; for(let g=1; g<=maxGen; g++) gens.push(g);
+    return slotsForGenerations(gens,true);
+  }
+
+  function filteredChildLines(row, params, lineSet=null){
+    let vals=childLineValuesForSlots(row, scopedSlots(params,true)).map(normalizeLine).filter(Boolean);
+    if(lineSet) vals=vals.filter(v=>lineSet.has(v));
+    if(Array.isArray(params?.lines) && params.lines.length){
+      const allowed=new Set(params.lines.map(normalizeLine));
+      vals=vals.filter(v=>allowed.has(v));
+    }
+    return vals;
+  }
+
   function computeMetric(row, metric, params){
+    params=params||{};
     if(metric==='self_factor_count') return factorTokens(colValue(row,'因子')).length;
     if(metric==='pedigree_factor_count' || metric==='pedigree_factor_distinct_count'){
       let vals = factorValuesForSlots(row, scopedSlots(params,true));
@@ -2482,38 +2539,88 @@ const set = new Set();
       const normalizedNames=names.map(normalizeText);
       return vals.filter(v=>normalizedNames.includes(v) || normalizedNames.includes(baseName(v))).length;
     }
-    if(metric==='child_line_count' || metric==='child_line_distinct_count' || metric==='sp_child_line_count' || metric==='st_child_line_count' || metric==='major_line_count' || metric==='major_line_distinct_count'){
-      let vals=childLineValuesForSlots(row, scopedSlots(params,true)).map(normalizeLine).filter(Boolean);
-      if(metric.startsWith('sp_')) vals=vals.filter(v=>SP_LINES.has(v));
-      if(metric.startsWith('st_')) vals=vals.filter(v=>ST_LINES.has(v));
-      if(metric.startsWith('major_')) vals=vals.filter(v=>MAJOR_LINES.has(v));
-      if(Array.isArray(params.lines) && params.lines.length){
-        const allowed=new Set(params.lines.map(normalizeLine));
-        vals=vals.filter(v=>allowed.has(v));
-      }
+    if(metric==='child_line_count' || metric==='child_line_distinct_count'){
+      const vals=filteredChildLines(row,params,null);
+      return metric.includes('distinct') ? new Set(vals).size : vals.length;
+    }
+    if(metric==='sp_child_line_count' || metric==='sp_child_line_distinct_count'){
+      const vals=filteredChildLines(row,params,SP_LINES);
+      return metric.includes('distinct') ? new Set(vals).size : vals.length;
+    }
+    if(metric==='st_child_line_count' || metric==='st_child_line_distinct_count'){
+      const vals=filteredChildLines(row,params,ST_LINES);
+      return metric.includes('distinct') ? new Set(vals).size : vals.length;
+    }
+    if(metric==='spst_child_line_count' || metric==='spst_child_line_distinct_count'){
+      const vals=filteredChildLines(row,params,SPST_LINES);
+      return metric.includes('distinct') ? new Set(vals).size : vals.length;
+    }
+    if(metric==='major_line_count' || metric==='major_line_distinct_count'){
+      const vals=filteredChildLines(row,params,MAJOR_LINES);
       return metric.includes('distinct') ? new Set(vals).size : vals.length;
     }
     if(metric==='child_line_transition_count'){
-      const path=Array.isArray(params.path) ? params.path : ['self','父','父父','父父父'];
-      let vals=childLineValuesForSlots(row,path);
+      const path=Array.isArray(params.path) && params.path.length ? params.path : ['self','父','父父','父父父'];
+      let vals=path.map(slot=>{
+        if(slot==='self') return normalizeText(colValue(row,'子系統'));
+        return normalizeText(colValue(row,'chi:'+slot));
+      });
       if(params.normalize_suffix_kei !== false) vals=vals.map(normalizeLine);
-      if(params.ignore_missing !== false) vals=vals.filter(Boolean);
       let n=0;
-      for(let i=1;i<vals.length;i++) if(vals[i]!==vals[i-1]) n++;
+      if(params.ignore_missing !== false){
+        vals=vals.filter(Boolean);
+        for(let i=1;i<vals.length;i++) if(vals[i]!==vals[i-1]) n++;
+      }else{
+        for(let i=1;i<vals.length;i++){
+          if(!vals[i-1] || !vals[i]) continue;
+          if(vals[i]!==vals[i-1]) n++;
+        }
+      }
       return n;
     }
     if(metric==='remaining_factor_count_after_advance'){
-      const advance=Math.max(0,Math.min(4,Number(params.advance||0)));
-      const maxGen=5-advance;
-      const gens=[]; for(let g=1;g<=maxGen;g++) gens.push(g);
-      let vals=factorValuesForSlots(row,slotsForGenerations(gens,true));
+      let vals=factorValuesForSlots(row,remainingSlotsAfterAdvance(params.advance));
       if(Array.isArray(params.allowed)&&params.allowed.length){
         const allowed=new Set(params.allowed);
         if(params.allow_non_inherited===false) vals=vals.filter(v=>allowed.has(v));
       }
       return vals.length;
     }
+
+    if(metric.startsWith('remaining_') && metric.endsWith('_after_advance')){
+      const slots=remainingSlotsAfterAdvance(params.advance);
+      let vals=childLineValuesForSlots(row,slots).map(normalizeLine).filter(Boolean);
+      let lineSet=null;
+      if(metric.includes('_spst_')) lineSet=SPST_LINES;
+      else if(metric.includes('_sp_')) lineSet=SP_LINES;
+      else if(metric.includes('_st_')) lineSet=ST_LINES;
+      else if(metric.includes('_major_')) lineSet=MAJOR_LINES;
+      if(lineSet) vals=vals.filter(v=>lineSet.has(v));
+      if(Array.isArray(params.lines)&&params.lines.length){
+        const allowed=new Set(params.lines.map(normalizeLine));
+        vals=vals.filter(v=>allowed.has(v));
+      }
+      return metric.includes('distinct_count') ? new Set(vals).size : vals.length;
+    }
     return NaN;
+  }
+
+  function normalizedConditionValue(selector, value){
+    const kind=selector?.kind;
+    if(kind==='child_line' || kind==='generation_child_line'){
+      if(Array.isArray(value)) return value.map(normalizeLine);
+      return normalizeLine(value);
+    }
+    return value;
+  }
+
+  function normalizedActualForSelector(selector, actual){
+    const kind=selector?.kind;
+    if(kind==='child_line' || kind==='generation_child_line'){
+      if(Array.isArray(actual)) return actual.map(normalizeLine);
+      return normalizeLine(actual);
+    }
+    return actual;
   }
 
   function evalExpression(row, expr){
@@ -2523,9 +2630,10 @@ const set = new Set();
     if(expr.not) return !evalExpression(row,expr.not);
     if(expr.condition){
       const c=expr.condition;
-      const actual=selectorValue(row,c.selector);
+      let actual=selectorValue(row,c.selector);
       if(actual===undefined) return c.missing==='pass';
-      return matchOperator(actual,c.operator,c.value);
+      actual=normalizedActualForSelector(c.selector,actual);
+      return matchOperator(actual,c.operator,normalizedConditionValue(c.selector,c.value));
     }
     return false;
   }
@@ -2538,71 +2646,332 @@ const set = new Set();
     return false;
   }
 
-  function validateSelector(sel, errors, path){
-    if(!sel || typeof sel!=='object'){ errors.push(path+': selectorがありません'); return; }
-    if(!SELECTOR_KINDS.has(sel.kind)){ errors.push(path+': 未定義selector '+String(sel.kind)); return; }
+  function validateSlotList(slots, errors, path, allowSelf=false){
+    if(!Array.isArray(slots) || !slots.length){ errors.push(path+': slotsが空です'); return; }
+    if(slots.length>100){ errors.push(path+': slotsが100件を超えています'); return; }
+    slots.forEach((slot,i)=>{
+      if(!ACCEPTED_SLOTS.has(slot) || (!allowSelf && slot==='self')) errors.push(path+'['+i+']: 未定義slot「'+String(slot)+'」');
+    });
+  }
+
+  function requireColumn(name, errors, path){
+    if(typeof columnMap!=='undefined' && Object.keys(columnMap).length && columnMap[name]===undefined){
+      errors.push(path+': 必要なCSV列「'+name+'」が存在しません');
+    }
+  }
+
+  function validateGenerationList(generation, errors, path, min=1, max=5){
+    const gens=Array.isArray(generation)?generation:[generation];
+    if(!gens.length || gens[0]==null){ errors.push(path+': generationがありません'); return; }
+    if(gens.length>5){ errors.push(path+': generation指定が多すぎます'); }
+    gens.forEach((g,i)=>{
+      const n=Number(g);
+      if(!Number.isInteger(n)||n<min||n>max) errors.push(path+'['+i+']: generationは'+min+'〜'+max+'で指定してください');
+    });
+  }
+
+  function validateFactorArray(values, errors, path){
+    const arr=Array.isArray(values)?values:[values];
+    arr.filter(v=>v!=null&&String(v)!=='').forEach((v,i)=>{
+      if(!FACTORS.has(String(v))) errors.push(path+'['+i+']: 未定義因子「'+v+'」');
+    });
+  }
+
+  function rejectUnknownKeys(obj, allowed, errors, path){
+    if(!obj || typeof obj!=='object' || Array.isArray(obj)) return;
+    Object.keys(obj).forEach(k=>{ if(!allowed.has(k)) errors.push(path+': 未定義プロパティ「'+k+'」'); });
+  }
+
+  function validateMetricParams(metric, params, errors, path){
+    params=params||{};
+    const commonChild=new Set(['slots','generation','lines']);
+    let allowed=new Set();
+    if(metric==='self_factor_count') allowed=new Set();
+    else if(['pedigree_factor_count','pedigree_factor_distinct_count'].includes(metric)) allowed=new Set(['slots','generation','factors']);
+    else if(metric==='pedigree_horse_count') allowed=new Set(['slots','generation','name','names']);
+    else if(['child_line_count','child_line_distinct_count','sp_child_line_count','sp_child_line_distinct_count','st_child_line_count','st_child_line_distinct_count','spst_child_line_count','spst_child_line_distinct_count','major_line_count','major_line_distinct_count'].includes(metric)) allowed=commonChild;
+    else if(metric==='child_line_transition_count') allowed=new Set(['path','ignore_missing','normalize_suffix_kei']);
+    else if(metric==='remaining_factor_count_after_advance') allowed=new Set(['advance','allowed','allow_non_inherited']);
+    else if(metric.startsWith('remaining_')&&metric.endsWith('_after_advance')) allowed=new Set(['advance','lines']);
+    rejectUnknownKeys(params,allowed,errors,path);
+    if(params.slots!==undefined) validateSlotList(params.slots,errors,path+'.slots',true);
+    if(params.generation!==undefined) validateGenerationList(params.generation,errors,path+'.generation',1,5);
+    if(params.factors!==undefined) validateFactorArray(params.factors,errors,path+'.factors');
+    if(params.allowed!==undefined) validateFactorArray(params.allowed,errors,path+'.allowed');
+    if(params.path!==undefined) validateSlotList(params.path,errors,path+'.path',true);
+    if(params.advance!==undefined){
+      const a=Number(params.advance);
+      if(!Number.isInteger(a)||a<0||a>4) errors.push(path+'.advance: 0〜4で指定してください');
+    }
+    if(params.lines!==undefined){
+      if(!Array.isArray(params.lines)||params.lines.length>100||params.lines.some(x=>typeof x!=='string')) errors.push(path+'.lines: 100件以下の文字列配列で指定してください');
+    }
+    if(params.names!==undefined){
+      if(!Array.isArray(params.names)||params.names.length>100||params.names.some(x=>typeof x!=='string')) errors.push(path+'.names: 100件以下の文字列配列で指定してください');
+    }
+    if(params.name!==undefined && typeof params.name!=='string') errors.push(path+'.name: 文字列で指定してください');
+    if(params.ignore_missing!==undefined && typeof params.ignore_missing!=='boolean') errors.push(path+'.ignore_missing: booleanで指定してください');
+    if(params.normalize_suffix_kei!==undefined && typeof params.normalize_suffix_kei!=='boolean') errors.push(path+'.normalize_suffix_kei: booleanで指定してください');
+    if(params.allow_non_inherited!==undefined && typeof params.allow_non_inherited!=='boolean') errors.push(path+'.allow_non_inherited: booleanで指定してください');
+  }
+
+  function validateMetricDataColumns(metric, params, errors, path){
+    params=params||{};
+    if(metric==='self_factor_count'){ requireColumn('因子',errors,path); return; }
+    if(metric==='pedigree_factor_count'||metric==='pedigree_factor_distinct_count'){
+      scopedSlots(params,true).forEach(slot=>{
+        if(slot==='self') requireColumn('因子',errors,path);
+        else { requireColumn(slot+'_因子1',errors,path); requireColumn(slot+'_因子2',errors,path); }
+      });
+      return;
+    }
+    if(metric==='pedigree_horse_count'){
+      scopedSlots(params,false).forEach(slot=>{ if(slot==='self') requireColumn('馬名',errors,path); else requireColumn(slot,errors,path); });
+      return;
+    }
+    if(['child_line_count','child_line_distinct_count','sp_child_line_count','sp_child_line_distinct_count','st_child_line_count','st_child_line_distinct_count','spst_child_line_count','spst_child_line_distinct_count','major_line_count','major_line_distinct_count'].includes(metric)){
+      scopedSlots(params,true).forEach(slot=>requireColumn(slot==='self'?'子系統':'chi:'+slot,errors,path));
+      return;
+    }
+    if(metric==='child_line_transition_count'){
+      const pathSlots=Array.isArray(params.path)&&params.path.length?params.path:['self','父','父父','父父父'];
+      pathSlots.forEach(slot=>requireColumn(slot==='self'?'子系統':'chi:'+slot,errors,path));
+      return;
+    }
+    if(metric==='remaining_factor_count_after_advance'){
+      remainingSlotsAfterAdvance(params.advance).forEach(slot=>{
+        if(slot==='self') requireColumn('因子',errors,path);
+        else { requireColumn(slot+'_因子1',errors,path); requireColumn(slot+'_因子2',errors,path); }
+      });
+      return;
+    }
+    if(metric.startsWith('remaining_')&&metric.endsWith('_after_advance')){
+      remainingSlotsAfterAdvance(params.advance).forEach(slot=>requireColumn(slot==='self'?'子系統':'chi:'+slot,errors,path));
+    }
+  }
+
+  function selectorCategory(sel){
+    if(!sel) return 'unknown';
+    if(sel.kind==='comparison') return 'comparison';
+    if(sel.kind==='derived_metric') return 'numeric';
     if(sel.kind==='field'){
-      const derived = new Set(['base_name','iname']);
-      if(!sel.name){ errors.push(path+': field.nameがありません'); }
-      else if(!derived.has(sel.name) && typeof columnMap!=='undefined' && columnMap[sel.name]===undefined){ errors.push(path+': CSV列「'+sel.name+'」が存在しません'); }
+      if(sel.name==='因子') return 'collection';
+      if(sel.name==='距離') return 'distance';
+      return 'scalar';
     }
-    if(sel.kind==='self_factor') return;
-    if(sel.kind==='pedigree_horse'||sel.kind==='pedigree_factor'||sel.kind==='parent_line'||sel.kind==='child_line'){
-      if(!Array.isArray(sel.slots)||!sel.slots.length) errors.push(path+': slotsが空です');
+    if(['self_factor','pedigree_horse','pedigree_factor','parent_line','child_line','generation_horse','generation_factor','generation_parent_line','generation_child_line','pedigree_factor_remaining'].includes(sel.kind)) return 'collection';
+    return 'unknown';
+  }
+
+  function operatorCompatible(sel, op){
+    const cat=selectorCategory(sel);
+    if(cat==='comparison') return COMPARE_OPS.has(op);
+    if(cat==='numeric') return NUMERIC_OPS.has(op);
+    if(cat==='distance') return DISTANCE_OPS.has(op);
+    if(cat==='scalar') return SCALAR_OPS.has(op);
+    if(cat==='collection') return COLLECTION_OPS.has(op);
+    return false;
+  }
+
+  function validateSelector(sel, errors, path){
+    if(!sel || typeof sel!=='object' || Array.isArray(sel)){ errors.push(path+': selectorがありません'); return; }
+    if(!SELECTOR_KINDS.has(sel.kind)){ errors.push(path+': 未定義selector '+String(sel.kind)); return; }
+    const selectorAllowed={
+      field:new Set(['kind','name']), self_factor:new Set(['kind']),
+      pedigree_horse:new Set(['kind','slots']), pedigree_factor:new Set(['kind','slots']), parent_line:new Set(['kind','slots']), child_line:new Set(['kind','slots']),
+      generation_horse:new Set(['kind','generation']), generation_factor:new Set(['kind','generation']), generation_parent_line:new Set(['kind','generation']), generation_child_line:new Set(['kind','generation']),
+      pedigree_factor_remaining:new Set(['kind','advance']), derived_metric:new Set(['kind','metric','params']), comparison:new Set(['kind','left','right'])
+    };
+    rejectUnknownKeys(sel,selectorAllowed[sel.kind]||new Set(['kind']),errors,path);
+
+    if(sel.kind==='field'){
+      if(!sel.name || !DIRECT_FIELDS.has(sel.name)){ errors.push(path+': 未定義field「'+String(sel.name)+'」'); return; }
+      if(['base_name','iname'].includes(sel.name)) requireColumn('馬名',errors,path);
+      else requireColumn(sel.name,errors,path);
+      return;
     }
-    if(sel.kind.startsWith('generation_')){
-      const gens=Array.isArray(sel.generation)?sel.generation:[sel.generation];
-      if(!gens.length || gens.some(g=>![1,2,3,4,5].includes(Number(g)))) errors.push(path+': generationは1〜5で指定してください');
+    if(sel.kind==='self_factor'){ requireColumn('因子',errors,path); return; }
+    if(sel.kind==='pedigree_horse'){
+      validateSlotList(sel.slots,errors,path+'.slots',false);
+      (sel.slots||[]).forEach(slot=>requireColumn(slot,errors,path));
+      return;
     }
-    if(sel.kind==='derived_metric' && !METRICS.has(sel.metric)) errors.push(path+': 未定義metric '+String(sel.metric));
+    if(sel.kind==='pedigree_factor'){
+      validateSlotList(sel.slots,errors,path+'.slots',false);
+      (sel.slots||[]).forEach(slot=>{ requireColumn(slot+'_因子1',errors,path); requireColumn(slot+'_因子2',errors,path); });
+      return;
+    }
+    if(sel.kind==='parent_line'){
+      validateSlotList(sel.slots,errors,path+'.slots',false);
+      (sel.slots||[]).forEach(slot=>requireColumn('pa:'+slot,errors,path));
+      return;
+    }
+    if(sel.kind==='child_line'){
+      validateSlotList(sel.slots,errors,path+'.slots',true);
+      (sel.slots||[]).forEach(slot=>requireColumn(slot==='self'?'子系統':'chi:'+slot,errors,path));
+      return;
+    }
+    if(sel.kind==='generation_horse'){
+      validateGenerationList(sel.generation,errors,path+'.generation',2,5);
+      slotsForGenerations(sel.generation||[],false).forEach(slot=>requireColumn(slot,errors,path));
+      return;
+    }
+    if(sel.kind==='generation_factor'){
+      validateGenerationList(sel.generation,errors,path+'.generation',1,5);
+      slotsForGenerations(sel.generation||[],true).forEach(slot=>{
+        if(slot==='self') requireColumn('因子',errors,path);
+        else { requireColumn(slot+'_因子1',errors,path); requireColumn(slot+'_因子2',errors,path); }
+      });
+      return;
+    }
+    if(sel.kind==='generation_parent_line'){
+      validateGenerationList(sel.generation,errors,path+'.generation',2,5);
+      slotsForGenerations(sel.generation||[],false).forEach(slot=>requireColumn('pa:'+slot,errors,path));
+      return;
+    }
+    if(sel.kind==='generation_child_line'){
+      validateGenerationList(sel.generation,errors,path+'.generation',1,5);
+      slotsForGenerations(sel.generation||[],true).forEach(slot=>requireColumn(slot==='self'?'子系統':'chi:'+slot,errors,path));
+      return;
+    }
+    if(sel.kind==='pedigree_factor_remaining'){
+      const a=Number(sel.advance??0);
+      if(!Number.isInteger(a)||a<0||a>4) errors.push(path+'.advance: 0〜4で指定してください');
+      remainingSlotsAfterAdvance(Number.isInteger(a)?a:0).forEach(slot=>{
+        if(slot==='self') requireColumn('因子',errors,path);
+        else { requireColumn(slot+'_因子1',errors,path); requireColumn(slot+'_因子2',errors,path); }
+      });
+      return;
+    }
+    if(sel.kind==='derived_metric'){
+      if(!METRICS.has(sel.metric)){ errors.push(path+': 未定義metric '+String(sel.metric)); return; }
+      validateMetricParams(sel.metric,sel.params||{},errors,path+'.params');
+      validateMetricDataColumns(sel.metric,sel.params||{},errors,path);
+      return;
+    }
     if(sel.kind==='comparison'){
       validateSelector(sel.left,errors,path+'.left');
       validateSelector(sel.right,errors,path+'.right');
+      if(sel.left?.kind==='comparison'||sel.right?.kind==='comparison') errors.push(path+': comparisonの入れ子は未対応です');
+    }
+  }
+
+  function validateConditionValue(c, errors, path){
+    const op=c.operator;
+    if(Array.isArray(c.value) && c.value.length>100) errors.push(path+'.value: 配列要素は100件以下にしてください');
+    if(!operatorCompatible(c.selector,op)){
+      errors.push(path+': selector '+String(c.selector?.kind)+' に operator '+String(op)+' は使用できません');
+      return;
+    }
+    if(c.missing!==undefined && !['fail','pass'].includes(c.missing)) errors.push(path+'.missing: fail / pass のみです');
+    const factorSelector=['self_factor','pedigree_factor','generation_factor','pedigree_factor_remaining'].includes(c.selector?.kind) || (c.selector?.kind==='field'&&c.selector.name==='因子');
+    if(factorSelector && ['has','has_any','has_all','multiset_equals'].includes(op)) validateFactorArray(c.value,errors,path+'.value');
+    if(['count_eq','count_gte','count_lte','distinct_count_eq','distinct_count_gte','eq','gt','gte','lt','lte','metric_eq','metric_gte','metric_lte','range_width_lte','range_width_gt'].includes(op)){
+      if(!Number.isFinite(Number(c.value))) errors.push(path+'.value: 数値が必要です');
+    }
+    if(['in','not_in','has_any','has_all','multiset_equals'].includes(op) && !Array.isArray(c.value)) errors.push(path+'.value: 配列が必要です');
+    if(['range_contains','range_equals'].includes(op)){
+      if(!c.value || typeof c.value!=='object' || Array.isArray(c.value)) errors.push(path+'.value: {min,max}形式が必要です');
+      else if(c.value.min==null && c.value.max==null) errors.push(path+'.value: minまたはmaxを指定してください');
     }
   }
 
   function validateExpression(expr, errors, state, depth, path){
     state.nodes++;
     state.maxDepth=Math.max(state.maxDepth,depth);
-    if(state.nodes>DBMS_LLM_MAX_NODES) return;
-    if(depth>DBMS_LLM_MAX_DEPTH) return;
-    if(!expr||typeof expr!=='object'){ errors.push(path+': 条件ノードが不正です'); return; }
+    if(state.nodes>DBMS_LLM_MAX_NODES || depth>DBMS_LLM_MAX_DEPTH) return;
+    if(!expr||typeof expr!=='object'||Array.isArray(expr)){ errors.push(path+': 条件ノードが不正です'); return; }
     const keys=['all','any','not','condition'].filter(k=>Object.prototype.hasOwnProperty.call(expr,k));
     if(keys.length!==1){ errors.push(path+': all/any/not/conditionのいずれか1つだけ指定してください'); return; }
     if(expr.all||expr.any){
       const arr=expr.all||expr.any;
       if(!Array.isArray(arr)||!arr.length){ errors.push(path+': all/anyが空です'); return; }
+      if(arr.length>100){ errors.push(path+': 配列要素が100件を超えています'); return; }
       arr.forEach((x,i)=>validateExpression(x,errors,state,depth+1,path+'.'+keys[0]+'['+i+']'));
       return;
     }
     if(expr.not){ validateExpression(expr.not,errors,state,depth+1,path+'.not'); return; }
     const c=expr.condition;
-    if(!c||typeof c!=='object'){ errors.push(path+': conditionが不正です'); return; }
+    if(!c||typeof c!=='object'||Array.isArray(c)){ errors.push(path+': conditionが不正です'); return; }
+    const allowedKeys=new Set(['selector','operator','value','missing']);
+    Object.keys(c).forEach(k=>{ if(!allowedKeys.has(k)) errors.push(path+'.condition: 未定義プロパティ「'+k+'」'); });
     validateSelector(c.selector,errors,path+'.condition.selector');
     if(!OPERATORS.has(c.operator)) errors.push(path+': 未定義operator '+String(c.operator));
-    const factorOps=new Set(['has','has_any','has_all','multiset_equals']);
-    if(factorOps.has(c.operator) && (c.selector?.kind==='self_factor'||c.selector?.kind==='pedigree_factor'||c.selector?.kind==='generation_factor')){
-      const vals=Array.isArray(c.value)?c.value:[c.value];
-      vals.filter(v=>v!=null).forEach(v=>{ if(!FACTORS.has(String(v))) errors.push(path+': 未定義因子「'+v+'」'); });
+    else validateConditionValue(c,errors,path+'.condition');
+  }
+
+  function validatePreferences(preferences, errors){
+    if(preferences==null) return;
+    if(!Array.isArray(preferences)){ errors.push('preferencesは配列である必要があります'); return; }
+    if(preferences.length>100){ errors.push('preferencesは100件以下にしてください'); return; }
+    preferences.forEach((p,i)=>{
+      const path='preferences['+i+']';
+      if(!p||typeof p!=='object'||Array.isArray(p)){ errors.push(path+': objectである必要があります'); return; }
+      rejectUnknownKeys(p,new Set(['selector','goal','values','weight','note']),errors,path);
+      validateSelector(p.selector,errors,path+'.selector');
+      if(!PREF_GOALS.has(p.goal)) errors.push(path+'.goal: 未定義goal '+String(p.goal));
+      const w=Number(p.weight);
+      if(!Number.isFinite(w)||w<0||w>100) errors.push(path+'.weight: 0〜100で指定してください');
+      if(['maximize','minimize'].includes(p.goal) && p.selector?.kind!=='derived_metric') errors.push(path+': maximize/minimizeはderived_metric selectorを使用してください');
+      if(['prefer_values','avoid_values'].includes(p.goal) && (!Array.isArray(p.values)||!p.values.length)) errors.push(path+'.values: 1件以上の配列が必要です');
+      if(p.note!==undefined && typeof p.note!=='string') errors.push(path+'.note: 文字列で指定してください');
+    });
+  }
+
+  function validateResult(result, errors){
+    if(result==null) return;
+    if(!result||typeof result!=='object'||Array.isArray(result)){ errors.push('resultはobjectである必要があります'); return; }
+    const allowed=new Set(['sort','show_all_matches','highlight_reasons','limit']);
+    Object.keys(result).forEach(k=>{ if(!allowed.has(k)) errors.push('result: 未定義プロパティ「'+k+'」'); });
+    if(result.sort!==undefined){
+      if(!Array.isArray(result.sort)){ errors.push('result.sortは配列である必要があります'); }
+      else if(result.sort.length>20){ errors.push('result.sortは20件以下にしてください'); }
+      else result.sort.forEach((x,i)=>{
+        const path='result.sort['+i+']';
+        if(!x||typeof x!=='object'||Array.isArray(x)){ errors.push(path+': objectである必要があります'); return; }
+        rejectUnknownKeys(x,new Set(['selector','order']),errors,path);
+        validateSelector(x.selector,errors,path+'.selector');
+        if(!['field','derived_metric'].includes(x.selector?.kind)) errors.push(path+': sort selectorはfieldまたはderived_metricを使用してください');
+        if(!['asc','desc'].includes(x.order)) errors.push(path+'.order: asc / desc のみです');
+      });
     }
+    if(result.limit!==undefined){
+      const n=Number(result.limit);
+      if(!Number.isInteger(n)||n<1||n>DBMS_LLM_RESULT_LIMIT_MAX) errors.push('result.limitは1〜'+DBMS_LLM_RESULT_LIMIT_MAX+'の整数で指定してください');
+    }
+    if(result.show_all_matches!==undefined && typeof result.show_all_matches!=='boolean') errors.push('result.show_all_matchesはbooleanで指定してください');
+    if(result.highlight_reasons!==undefined && typeof result.highlight_reasons!=='boolean') errors.push('result.highlight_reasonsはbooleanで指定してください');
   }
 
   function validatePayload(payload){
     const errors=[];
     const warnings=[];
     if(!payload||typeof payload!=='object'||Array.isArray(payload)) return {errors:['JSONルートはobjectである必要があります'],warnings};
+    const allowedRoot=new Set(['protocol','status','target','query_text','constraints','preferences','result','resolved_terms','unresolved_terms','source']);
+    Object.keys(payload).forEach(k=>{ if(!allowedRoot.has(k)) errors.push('ルート: 未定義プロパティ「'+k+'」'); });
     if(payload.protocol!==DBMS_LLM_PROTOCOL) errors.push('protocolは「'+DBMS_LLM_PROTOCOL+'」である必要があります');
     if(!['ready','needs_clarification'].includes(payload.status)) errors.push('statusはready / needs_clarificationのみです');
     if(!['stallion','broodmare','all'].includes(payload.target)) errors.push('targetはstallion / broodmare / allのみです');
     if(payload.status==='needs_clarification') errors.push('status=needs_clarification のため検索できません。GPTとの対話で条件を確定してください。');
     if(Array.isArray(payload.unresolved_terms)&&payload.unresolved_terms.length) errors.push('未解決語があります: '+payload.unresolved_terms.join(' / '));
+    if(payload.unresolved_terms!==undefined && !Array.isArray(payload.unresolved_terms)) errors.push('unresolved_termsは配列である必要があります');
     if(!payload.constraints) errors.push('constraintsがありません');
     const state={nodes:0,maxDepth:0};
     if(payload.constraints) validateExpression(payload.constraints,errors,state,1,'constraints');
     if(state.nodes>DBMS_LLM_MAX_NODES) errors.push('条件ノード数が上限'+DBMS_LLM_MAX_NODES+'を超えています');
     if(state.maxDepth>DBMS_LLM_MAX_DEPTH) errors.push('条件のネストが上限'+DBMS_LLM_MAX_DEPTH+'を超えています');
-    if(Array.isArray(payload.preferences)&&payload.preferences.length) warnings.push('preferences '+payload.preferences.length+'件を受信しました。現在の試作版では必須条件の抽出を実行し、preferencesによるスコア順ランキングは次段階で実装します。');
-    if(payload.source?.schema_version && payload.source.schema_version!==DBMS_LLM_SCHEMA) warnings.push('schema_version='+payload.source.schema_version+' を受信（想定 '+DBMS_LLM_SCHEMA+'）');
+    validatePreferences(payload.preferences||[],errors);
+    validateResult(payload.result,errors);
+    if(payload.source?.schema_version && !DBMS_LLM_ACCEPTED_SCHEMAS.has(payload.source.schema_version)) errors.push('未対応schema_version='+payload.source.schema_version+'（対応: 1.1.0 / 1.2.0）');
+    if(payload.source!==undefined){
+      if(!payload.source||typeof payload.source!=='object'||Array.isArray(payload.source)) errors.push('sourceはobjectである必要があります');
+      else rejectUnknownKeys(payload.source,new Set(['generator','schema_version']),errors,'source');
+    }
+    if(payload.query_text!==undefined && typeof payload.query_text!=='string') errors.push('query_textは文字列である必要があります');
+    if(payload.resolved_terms!==undefined && (!payload.resolved_terms||typeof payload.resolved_terms!=='object'||Array.isArray(payload.resolved_terms))) errors.push('resolved_termsはobjectである必要があります');
+    if(!payload.source?.schema_version) warnings.push('source.schema_versionがありません。1.1互換として評価します。');
+    if(payload.result?.show_all_matches===false && payload.result?.limit==null) warnings.push('result.show_all_matches=false ですが limit 未指定のため、全該当件を表示します。');
+    if(payload.result?.show_all_matches===true && payload.result?.limit!=null) warnings.push('result.limit が指定されているため、show_all_matches=true より limit を優先して上位'+payload.result.limit+'件を表示します。');
     return {errors,warnings,state};
   }
 
@@ -2623,7 +2992,7 @@ const set = new Set();
   }
 
   function setLlmBusy(busy){
-    ['llmApplyBtn','llmSampleBtn','llmCopyUrlBtn','llmClearBtn'].forEach(id=>{
+    ['llmApplyBtn','llmSampleBtn','llmCopyUrlBtn','llmClearBtn','llmSelfTestBtn'].forEach(id=>{
       const e=document.getElementById(id); if(e)e.disabled=!!busy;
     });
   }
@@ -2779,6 +3148,145 @@ const set = new Set();
     });
   }
 
+  function selectorLabel(sel){
+    if(!sel) return '不明';
+    if(sel.kind==='field') return sel.name;
+    if(sel.kind==='self_factor') return '1代目（自身）の因子';
+    if(sel.kind==='pedigree_horse') return '血統馬 '+(sel.slots||[]).join('/');
+    if(sel.kind==='pedigree_factor') return '血統因子 '+(sel.slots||[]).join('/');
+    if(sel.kind==='parent_line') return '親系統 '+(sel.slots||[]).join('/');
+    if(sel.kind==='child_line') return '子系統 '+(sel.slots||[]).join('/');
+    if(sel.kind.startsWith('generation_')) return '世代 '+(Array.isArray(sel.generation)?sel.generation:[sel.generation]).join('/')+' / '+sel.kind.replace('generation_','');
+    if(sel.kind==='derived_metric') return sel.metric;
+    if(sel.kind==='comparison') return '比較';
+    if(sel.kind==='pedigree_factor_remaining') return '残存因子（advance '+Number(sel.advance||0)+'）';
+    return sel.kind;
+  }
+
+  function normalizedPreferenceArray(selector, actual){
+    let arr=toArray(actual).map(normalizeText);
+    if(selector?.kind==='child_line'||selector?.kind==='generation_child_line'||(selector?.kind==='field'&&selector.name==='子系統')) arr=arr.map(normalizeLine);
+    return arr;
+  }
+
+  function preferenceValueHit(selector, actual, values){
+    const arr=normalizedPreferenceArray(selector,actual);
+    let wanted=(Array.isArray(values)?values:[]).map(normalizeText);
+    if(selector?.kind==='child_line'||selector?.kind==='generation_child_line'||(selector?.kind==='field'&&selector.name==='子系統')) wanted=wanted.map(normalizeLine);
+    return arr.some(v=>wanted.includes(v));
+  }
+
+  function sortableSelectorValue(row, selector){
+    const actual=selectorValue(row,selector);
+    if(typeof actual==='number') return actual;
+    if(Array.isArray(actual)) return actual.map(normalizeText).join(' / ');
+    if(actual && actual.__comparison) return '';
+    return normalizeText(actual);
+  }
+
+  function compareSortValues(a,b,order){
+    const na=Number(a), nb=Number(b);
+    let cmp=0;
+    if(Number.isFinite(na)&&Number.isFinite(nb)&&String(a).trim()!==''&&String(b).trim()!=='') cmp=na-nb;
+    else cmp=String(a??'').localeCompare(String(b??''),'ja',{numeric:true,sensitivity:'base'});
+    return order==='desc' ? -cmp : cmp;
+  }
+
+  function rankAndSortRows(rows,payload){
+    const prefs=Array.isArray(payload.preferences)?payload.preferences:[];
+    const explicitSort=Array.isArray(payload.result?.sort)?payload.result.sort:[];
+    const entries=rows.map((row,index)=>({row,index,score:0,maxScore:0,pref:[],sortValues:[]}));
+
+    prefs.forEach((pref,pi)=>{
+      const weight=Math.max(0,Math.min(100,Number(pref.weight)||0));
+      if(pref.goal==='maximize'||pref.goal==='minimize'){
+        const raws=entries.map(e=>Number(selectorValue(e.row,pref.selector)));
+        const finite=raws.filter(Number.isFinite);
+        const lo=finite.length?Math.min(...finite):0;
+        const hi=finite.length?Math.max(...finite):0;
+        entries.forEach((e,i)=>{
+          const raw=raws[i];
+          let norm=0;
+          if(Number.isFinite(raw)){
+            if(hi===lo) norm=1;
+            else norm=pref.goal==='maximize' ? (raw-lo)/(hi-lo) : (hi-raw)/(hi-lo);
+          }
+          const points=norm*weight;
+          e.score+=points; e.maxScore+=weight;
+          e.pref.push({index:pi,label:pref.note||selectorLabel(pref.selector),goal:pref.goal,raw,normalized:norm,weight,points});
+        });
+      }else{
+        entries.forEach(e=>{
+          const actual=selectorValue(e.row,pref.selector);
+          const hit=preferenceValueHit(pref.selector,actual,pref.values||[]);
+          const norm=pref.goal==='prefer_values' ? (hit?1:0) : (hit?0:1);
+          const points=norm*weight;
+          e.score+=points; e.maxScore+=weight;
+          e.pref.push({index:pi,label:pref.note||selectorLabel(pref.selector),goal:pref.goal,raw:normalizedPreferenceArray(pref.selector,actual).join(' / '),normalized:norm,weight,points});
+        });
+      }
+    });
+
+    entries.forEach(e=>{
+      e.sortValues=explicitSort.map(s=>sortableSelectorValue(e.row,s.selector));
+    });
+
+    entries.sort((a,b)=>{
+      if(explicitSort.length){
+        for(let i=0;i<explicitSort.length;i++){
+          const c=compareSortValues(a.sortValues[i],b.sortValues[i],explicitSort[i].order);
+          if(c!==0) return c;
+        }
+      }
+      if(prefs.length){
+        const d=b.score-a.score;
+        if(Math.abs(d)>1e-9) return d;
+      }
+      const an=normalizeText(colValue(a.row,'馬名')), bn=normalizeText(colValue(b.row,'馬名'));
+      return an.localeCompare(bn,'ja',{numeric:true,sensitivity:'base'});
+    });
+
+    const limit=payload.result?.limit!=null ? Math.min(entries.length,Number(payload.result.limit)) : entries.length;
+    return {entries,displayEntries:entries.slice(0,limit),prefs,explicitSort};
+  }
+
+  function escapeHtml(v){
+    return String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  }
+
+  function formatPrefRaw(v){
+    if(typeof v==='number' && Number.isFinite(v)) return Number.isInteger(v)?String(v):v.toFixed(3);
+    return normalizeText(v);
+  }
+
+  function renderRanking(ranked,payload,totalMatched){
+    const box=document.getElementById('llmRankingBox');
+    const el=document.getElementById('llmRanking');
+    if(!box||!el) return;
+    const highlight=payload.result?.highlight_reasons!==false;
+    const shouldShow=highlight && (ranked.prefs.length||ranked.explicitSort.length);
+    box.style.display=shouldShow?'':'none';
+    if(!shouldShow){ el.innerHTML=''; return; }
+    const top=ranked.displayEntries.slice(0,Math.min(20,ranked.displayEntries.length));
+    let html='<div class="llm-note">総該当 '+totalMatched.toLocaleString()+'件 / 表示 '+ranked.displayEntries.length.toLocaleString()+'件。ここでは上位'+top.length+'件を表示。</div>';
+    top.forEach((e,i)=>{
+      const name=normalizeText(colValue(e.row,'馬名'))||'(馬名なし)';
+      const scoreText=ranked.prefs.length ? ('score '+e.score.toFixed(1)+' / '+e.maxScore.toFixed(0)) : '';
+      const reasons=[];
+      e.pref.forEach(d=>{
+        const raw=formatPrefRaw(d.raw);
+        reasons.push(escapeHtml(d.label)+': '+escapeHtml(raw)+' → '+d.points.toFixed(1)+'pt/'+d.weight.toFixed(0));
+      });
+      ranked.explicitSort.forEach((sort,j)=>{
+        reasons.push('sort '+escapeHtml(selectorLabel(sort.selector))+'='+escapeHtml(e.sortValues[j])+' ('+sort.order+')');
+      });
+      html+='<div class="llm-rank-item"><div class="llm-rank-head"><span>'+String(i+1)+'. '+escapeHtml(name)+'</span><span>'+escapeHtml(scoreText)+'</span></div>';
+      if(reasons.length) html+='<div class="llm-rank-reasons">'+reasons.join('<br>')+'</div>';
+      html+='</div>';
+    });
+    el.innerHTML=html;
+  }
+
   function resultCount(){
     const dt=getDT(); return dt ? dt.rows({search:'applied'}).count() : 0;
   }
@@ -2801,6 +3309,9 @@ const set = new Set();
     setProgress(0,'検索準備中…',true);
 
     try{
+      // LLM適用前のDataTables並び順を退避し、LLMランキング時は挿入順を維持する。
+      const preDt=getDT();
+      if(preDt && llmSavedOrder===null){ try{ llmSavedOrder=preDt.order(); }catch(e){ llmSavedOrder=[]; } }
       // 先に過去条件を解除。ただしLLMフィルタはmask完成後に有効化する。
       activePayload=null;
       llmMatchMask=null;
@@ -2817,26 +3328,34 @@ const set = new Set();
       installLlmFilter();
       applySimpleUiHints(payload);
 
+      setProgress(92,'優先条件・並び順を評価中…');
+      const rankStart=performance.now();
+      const ranked=rankAndSortRows(built.matchedRows,payload);
+      const rankMs=performance.now()-rankStart;
+      renderRanking(ranked,payload,built.matched);
+
       setProgress(96,'検索結果を表へ反映中…');
       const drawStart=performance.now();
-      // v3: DataTablesへ全件を保持してmaskで隠すのではなく、該当行だけを投入する。
-      // URL起動時は初期DataTableも空なので、2,965行×多数列の初期処理を丸ごと回避できる。
+      // URL起動時は該当行（result.limit指定時は上位N件）だけDataTablesへ投入する。
       const dt=getDT();
       if(dt){
         dt.clear();
-        dt.rows.add(built.matchedRows);
+        dt.rows.add(ranked.displayEntries.map(e=>e.row));
+        dt.order([]); // preferences/result.sortで決めた挿入順をDataTablesの既定ソートで崩さない
         dt.draw(false);
       }
       const drawMs=performance.now()-drawStart;
 
-      // draw直後の左45プルダウン更新は別タイミングへ遅延しているため、先に完了表示できる。
       const totalMs=performance.now()-totalStart;
       const warnings=validation.warnings.length ? '\n\n注意:\n・'+validation.warnings.join('\n・') : '';
-      setProgress(100,'完了: '+built.matched.toLocaleString()+'件 / '+built.total.toLocaleString()+'頭',true);
+      const limitNote=ranked.displayEntries.length!==built.matched ? (' / 表示: '+ranked.displayEntries.length.toLocaleString()+'件') : '';
+      const prefNote=ranked.prefs.length ? (' / 優先条件: '+ranked.prefs.length+'件') : '';
+      const sortNote=ranked.explicitSort.length ? (' / 明示sort: '+ranked.explicitSort.length+'件') : '';
+      setProgress(100,'完了: '+built.matched.toLocaleString()+'件'+limitNote+' / '+built.total.toLocaleString()+'頭',true);
       setStatus(
         (sourceLabel||'JSON')+'から検索条件を適用しました。\n'+
-        '該当件数: '+resultCount().toLocaleString()+'件\n'+
-        '条件評価: '+Math.round(built.evalMs)+' ms / 表反映: '+Math.round(drawMs)+' ms / LLM処理: '+Math.round(totalMs)+' ms\n'+
+        '総該当件数: '+built.matched.toLocaleString()+'件'+limitNote+prefNote+sortNote+'\n'+
+        '条件評価: '+Math.round(built.evalMs)+' ms / ランキング: '+Math.round(rankMs)+' ms / 表反映: '+Math.round(drawMs)+' ms / LLM処理: '+Math.round(totalMs)+' ms\n'+
         'ページ開始→結果表示: '+Math.round(performance.now())+' ms'+warnings,
         validation.warnings.length?'warn':'ok'
       );
@@ -2872,6 +3391,8 @@ const set = new Set();
     resetManualFilters();
     const ta=document.getElementById('llmJsonInput'); if(ta)ta.value='';
     updatePreview(null);
+    const rb=document.getElementById('llmRankingBox'); if(rb)rb.style.display='none';
+    const rr=document.getElementById('llmRanking'); if(rr)rr.innerHTML='';
     setStatus('LLM検索条件を解除しました。','ok');
     if(location.hash.startsWith('#dbms=')) history.replaceState(null,'',location.pathname+location.search);
     try{
@@ -2879,6 +3400,8 @@ const set = new Set();
       if(dt && typeof originalData!=='undefined' && Array.isArray(originalData)){
         dt.clear();
         dt.rows.add(originalData);
+        if(llmSavedOrder!==null){ try{ dt.order(llmSavedOrder); }catch(e){} }
+        llmSavedOrder=null;
         dt.draw(false);
       }else if(typeof applyAllFilters==='function'){
         applyAllFilters();
@@ -2901,9 +3424,113 @@ const set = new Set();
       preferences:[],
       resolved_terms:{'1代目':'自身','2代目':'父'},
       unresolved_terms:[],
-      source:{generator:'manual_sample',schema_version:'1.1.0'}
+      source:{generator:'manual_sample',schema_version:'1.2.0'}
     };
   }
+
+  function runSelfTests(){
+    const rows=sourceRowsForMask();
+    const results=[];
+    function test(name,fn){
+      try{
+        const detail=fn();
+        results.push({name,ok:true,detail:detail==null?'':String(detail)});
+      }catch(e){ results.push({name,ok:false,detail:e?.message||String(e)}); }
+    }
+    function assert(cond,msg){ if(!cond) throw new Error(msg||'assertion failed'); }
+
+    test('CSV/columnMap',()=>{
+      assert(rows.length>0,'検索元データがありません');
+      ['馬名','因子','子系統','距離','父','父_因子1','chi:父'].forEach(c=>assert(columnMap[c]!==undefined,'列不足: '+c));
+      return rows.length.toLocaleString()+'頭';
+    });
+
+    const sample=samplePayload();
+    test('schema 1.2 sample validation',()=>{
+      const v=validatePayload(sample); assert(v.errors.length===0,v.errors.join(' / ')); return 'OK';
+    });
+    test('schema 1.1 backward compatibility',()=>{
+      const p=JSON.parse(JSON.stringify(sample)); p.source.schema_version='1.1.0';
+      const v=validatePayload(p); assert(v.errors.length===0,v.errors.join(' / ')); return 'OK';
+    });
+    test('self + 2代目 factor AND',()=>{
+      const n=rows.filter(r=>targetPass(r,'stallion')&&evalExpression(r,sample.constraints)).length;
+      assert(n>=0,'件数計算失敗'); return n+'件';
+    });
+    test('AND / OR / NOT evaluator',()=>{
+      const expr={all:[
+        {any:[
+          {condition:{selector:{kind:'self_factor'},operator:'has',value:'適'}},
+          {condition:{selector:{kind:'self_factor'},operator:'has',value:'長'}}
+        ]},
+        {not:{condition:{selector:{kind:'field',name:'安定'},operator:'equals',value:'Z'}}}
+      ]};
+      const v={protocol:DBMS_LLM_PROTOCOL,status:'ready',target:'stallion',constraints:expr,preferences:[],unresolved_terms:[],source:{schema_version:DBMS_LLM_SCHEMA}};
+      const chk=validatePayload(v); assert(!chk.errors.length,chk.errors.join(' / '));
+      const n=rows.filter(r=>targetPass(r,'stallion')&&evalExpression(r,expr)).length; return n+'件';
+    });
+    test('comparison overlaps',()=>{
+      const expr={condition:{selector:{kind:'comparison',left:{kind:'self_factor'},right:{kind:'generation_factor',generation:[2]}},operator:'overlaps'}};
+      const v={protocol:DBMS_LLM_PROTOCOL,status:'ready',target:'stallion',constraints:expr,preferences:[],unresolved_terms:[],source:{schema_version:DBMS_LLM_SCHEMA}};
+      const chk=validatePayload(v); assert(!chk.errors.length,chk.errors.join(' / '));
+      const n=rows.filter(r=>targetPass(r,'stallion')&&evalExpression(r,expr)).length; return n+'件';
+    });
+    test('child-line suffix normalization',()=>{
+      const row=rows.find(r=>normalizeText(colValue(r,'子系統')).endsWith('系'));
+      assert(row,'子系統データがありません');
+      const plain=normalizeLine(colValue(row,'子系統'));
+      const expr={condition:{selector:{kind:'child_line',slots:['self']},operator:'has',value:plain}};
+      assert(evalExpression(row,expr),'末尾「系」なし条件が一致しません'); return plain;
+    });
+    test('transition metric',()=>{
+      const vals=rows.slice(0,300).map(r=>computeMetric(r,'child_line_transition_count',{path:['self','父','父父','父父父'],ignore_missing:true,normalize_suffix_kei:true}));
+      assert(vals.every(Number.isFinite),'非数値metric'); assert(vals.every(v=>v>=0&&v<=3),'範囲外metric'); return '0〜'+Math.max(...vals);
+    });
+    test('remaining metrics monotonic',()=>{
+      for(const r of rows.slice(0,300)){
+        let prev=Infinity;
+        for(let a=0;a<=4;a++){
+          const n=computeMetric(r,'remaining_spst_child_line_count_after_advance',{advance:a});
+          assert(Number.isFinite(n),'非数値'); assert(n<=prev,'advance増加で本数が増加'); prev=n;
+        }
+      }
+      return '300頭×advance0〜4';
+    });
+    test('preferences ranking + limit',()=>{
+      const subset=rows.filter(r=>targetPass(r,'stallion')).slice(0,500);
+      const p={protocol:DBMS_LLM_PROTOCOL,status:'ready',target:'stallion',constraints:{condition:{selector:{kind:'derived_metric',metric:'self_factor_count',params:{}},operator:'metric_gte',value:0}},preferences:[{selector:{kind:'derived_metric',metric:'st_child_line_distinct_count',params:{}},goal:'maximize',weight:100,note:'ST種類'}],result:{limit:20,highlight_reasons:true},unresolved_terms:[],source:{schema_version:DBMS_LLM_SCHEMA}};
+      const chk=validatePayload(p); assert(!chk.errors.length,chk.errors.join(' / '));
+      const ranked=rankAndSortRows(subset,p); assert(ranked.displayEntries.length===Math.min(20,subset.length),'limit不一致');
+      for(let i=1;i<ranked.entries.length;i++) assert(ranked.entries[i-1].score+1e-9>=ranked.entries[i].score,'score降順でない');
+      return ranked.displayEntries.length+'件';
+    });
+    test('unknown factor rejected',()=>{
+      const p=JSON.parse(JSON.stringify(sample)); p.constraints.all[0].condition.value='順';
+      const v=validatePayload(p); assert(v.errors.some(x=>x.includes('未定義因子')),'未定義因子を拒否していません'); return 'OK';
+    });
+    test('result.sort validation',()=>{
+      const p=JSON.parse(JSON.stringify(sample)); p.result={sort:[{selector:{kind:'derived_metric',metric:'st_child_line_distinct_count',params:{}},order:'desc'}],limit:10};
+      const v=validatePayload(p); assert(v.errors.length===0,v.errors.join(' / ')); return 'OK';
+    });
+
+    const ok=results.filter(x=>x.ok).length;
+    const fail=results.length-ok;
+    const lines=['DBMS LLM 自己診断: '+ok+'/'+results.length+' PASS'+(fail?' / '+fail+' FAIL':'')];
+    results.forEach(r=>lines.push((r.ok?'✓ ':'✗ ')+r.name+(r.detail?' — '+r.detail:'')));
+    const out=lines.join('\n');
+    const el=document.getElementById('llmSelfTest'); if(el)el.textContent=out;
+    return {ok,fail,total:results.length,text:out,results};
+  }
+
+  window.DBMS_LLM_TEST_API={
+    validatePayload,
+    evalExpression,
+    computeMetric,
+    rankAndSortRows,
+    runSelfTests,
+    samplePayload,
+    get sourceRows(){ return sourceRowsForMask(); }
+  };
 
   function bindUi(){
     document.getElementById('llmApplyBtn')?.addEventListener('click',async()=>{
@@ -2924,10 +3551,19 @@ const set = new Set();
         catch(e){
           const ta=document.createElement('textarea'); ta.value=url; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
         }
-        setStatus('検索URLをコピーしました。\n'+url,'ok');
+        const encodedLen=(url.split('#dbms=')[1]||'').length;
+        if(encodedLen>DBMS_LLM_URL_SOFT_LIMIT){
+          setStatus('検索URLをコピーしました。ただしURL payloadが約'+encodedLen.toLocaleString()+'文字あり、推奨目安'+DBMS_LLM_URL_SOFT_LIMIT.toLocaleString()+'文字を超えています。環境によってはJSON貼り付けを使用してください。\n'+url,'warn');
+        }else{
+          setStatus('検索URLをコピーしました。\n'+url,'ok');
+        }
       }catch(e){ setStatus('検索URLを作成できません。\n'+e.message,'error'); }
     });
     document.getElementById('llmClearBtn')?.addEventListener('click',clearPayload);
+    document.getElementById('llmSelfTestBtn')?.addEventListener('click',()=>{
+      const r=runSelfTests();
+      setStatus('自己診断を実行しました。 '+r.ok+'/'+r.total+' PASS'+(r.fail?' / '+r.fail+' FAIL':''), r.fail?'error':'ok');
+    });
   }
 
   function autoLoadWhenReady(){
