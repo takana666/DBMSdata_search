@@ -20,6 +20,18 @@
       margin-bottom: 20px;
       font-size: 14px;
     }
+    #app-status {
+      display:inline-block;
+      margin-top:4px;
+      padding:4px 8px;
+      border:1px solid #ddd;
+      border-radius:6px;
+      background:#fafafa;
+      font-size:12px;
+      line-height:1.4;
+    }
+    #app-status.is-ready { border-color:#319b62; background:#f3fff8; }
+    #app-status.is-error { border-color:#c84d4d; background:#fff5f5; }
     .container {
       display: flex;
     }
@@ -354,6 +366,12 @@
     #tab-llm .llm-status.is-ok { border-color:#319b62; background:#f3fff8; }
     #tab-llm .llm-status.is-error { border-color:#c84d4d; background:#fff5f5; }
     #tab-llm .llm-status.is-warn { border-color:#c29124; background:#fffaf0; }
+    #tab-llm .llm-progress { display:none; margin-top:8px; }
+    #tab-llm .llm-progress.is-active { display:block; }
+    #tab-llm .llm-progress-track { height:8px; border-radius:999px; background:#e9e9e9; overflow:hidden; }
+    #tab-llm .llm-progress-bar { height:100%; width:0%; background:#777; transition:width .08s linear; }
+    #tab-llm .llm-progress-text { margin-top:4px; font-size:11px; color:#555; }
+    #tab-llm .llm-actions button:disabled { opacity:.55; cursor:wait; }
     #tab-llm .llm-query-text { font-size:13px; line-height:1.55; overflow-wrap:anywhere; }
     #tab-llm pre {
       white-space: pre-wrap;
@@ -384,6 +402,7 @@
   <div id="release-info">
     <p>2025/02/11：リリース</p>
     <p id="update-date">データ最終更新日：不明</p>
+    <div id="app-status">データ読込準備中…</div>
     <div class="csv-download-actions">
       <button type="button" id="downloadAllCsvBtn" disabled>全データをDL</button>
       <button type="button" id="downloadFilteredCsvBtn" disabled>検索結果をDL</button>
@@ -596,6 +615,10 @@
         <div class="llm-box">
           <div class="llm-title">状態</div>
           <div id="llmStatus" class="llm-status">LLM検索条件は未適用です。</div>
+          <div id="llmProgress" class="llm-progress" aria-live="polite">
+            <div class="llm-progress-track"><div id="llmProgressBar" class="llm-progress-bar"></div></div>
+            <div id="llmProgressText" class="llm-progress-text"></div>
+          </div>
           <div id="llmQueryWrap" style="display:none; margin-top:8px;">
             <div class="llm-title">検索意図</div>
             <div id="llmQueryText" class="llm-query-text"></div>
@@ -673,6 +696,15 @@
     // 2. CSVを自動読み込み（CSV更新日時を取得して更新日表示）
     // =========================
     document.addEventListener("DOMContentLoaded", () => {
+      const appStatus = document.getElementById('app-status');
+      const setAppStatus = (text, kind='') => {
+        if(!appStatus) return;
+        appStatus.className = kind ? 'is-'+kind : '';
+        appStatus.textContent = text;
+      };
+      const initStarted = performance.now();
+      setAppStatus('CSVを読み込み中…');
+
       fetch(CSV_URL)
         .then(res => {
           let lastModified = res.headers.get("Last-Modified");
@@ -689,13 +721,27 @@
         })
         .then(csvText => {
           loadedCsvText = csvText;
-          initTable(csvText);
+          setAppStatus('CSV解析・検索表を準備中…');
+          // 状態表示をブラウザへ一度描画してから重い初期化へ進む。
+          return new Promise((resolve,reject) => {
+            requestAnimationFrame(() => setTimeout(() => {
+              try{ initTable(csvText); resolve(); }
+              catch(e){ reject(e); }
+            },0));
+          });
+        })
+        .then(() => {
           const allBtn = document.getElementById("downloadAllCsvBtn");
           const filteredBtn = document.getElementById("downloadFilteredCsvBtn");
           if(allBtn) allBtn.disabled = false;
           if(filteredBtn) filteredBtn.disabled = false;
+          const elapsed = Math.round(performance.now()-initStarted);
+          setAppStatus('準備完了（'+(originalData?.length||0).toLocaleString()+'頭 / '+elapsed+' ms）','ready');
         })
-        .catch(err => console.error("CSV読み込み失敗:", err));
+        .catch(err => {
+          console.error("CSV読み込み失敗:", err);
+          setAppStatus('読み込みエラー: '+(err?.message||err),'error');
+        });
 
       function downloadCsvText(csvText, filename){
         if(!csvText) return;
@@ -1096,6 +1142,8 @@ headerRow.forEach((col, i) => {
           { targets: headerRow.map((h,i)=>HIDDEN_COLS.has(h)?i:-1).filter(i=>i>=0), visible: false }
         ],
         scrollX: true,
+        deferRender: true,
+        processing: true,
         orderCellsTop: true,
         dom: '<"dt-top"<"dt-sex-filter"><"dt-right"lf>>rt<"bottom"ip><"clear">',
       });
@@ -1115,13 +1163,12 @@ headerRow.forEach((col, i) => {
       applyVerticalHeaderLabels();
       requestAnimationFrame(applyVerticalHeaderLabels);
 
-      // (v7) DataTables描画後に左パネル（血統表/親系統/子系統）プルダウンを常に同期
-      // SPST子系統など table.draw() のみで更新されるケースでも、検索適用後データに追随させる
+      // 高速化: drawごとに45個のプルダウンを無条件再生成しない。
+      // 検索結果の行集合が本当に変わった時だけ、描画後に少し遅らせて同期する。
       table.on('draw', function(){
         try{
           applyVerticalHeaderLabels();
-          let dtRows = table.rows({search:'applied'}).data().toArray();
-          updateAllSelects(dtRows);
+          scheduleLeftSelectRefresh(false);
         }catch(e){}
       });
 
@@ -1416,8 +1463,8 @@ const v = (distanceCol >= 0 ? (data[distanceCol] ?? '') : '').toString().trim();
       })();
 
 
-      // 左側プルダウン生成（既存処理）
-      updateAllSelects(dataRows);
+      // 左側プルダウンは画面の初期描画を先に返してから生成する。
+      scheduleLeftSelectRefresh(true);
 
       // 右側ヘッダー2行目<select> の選択肢生成
       populateColumnFilters(headerRow, dataRows);
@@ -1519,48 +1566,67 @@ sel.innerHTML = opts;
     }
 
     // =========================
-    // 4. 左パネルプルダウン（既存処理）
+    // 4. 左パネルプルダウン（高速化）
     // =========================
+    let leftSelectRefreshTimer = null;
+    let leftSelectResultSignature = null;
+
+    function filteredRowSignature(){
+      if(!table) return '';
+      // インデックス列だけで比較するため、全行データのtoArray()よりかなり軽い。
+      const idx = table.rows({search:'applied'}).indexes().toArray();
+      return idx.join(',');
+    }
+
+    function scheduleLeftSelectRefresh(force){
+      if(!table) return;
+      clearTimeout(leftSelectRefreshTimer);
+      leftSelectRefreshTimer = setTimeout(() => {
+        try{
+          const sig = filteredRowSignature();
+          if(!force && sig === leftSelectResultSignature) return;
+          leftSelectResultSignature = sig;
+          const dtRows = table.rows({search:'applied'}).data().toArray();
+          updateAllSelects(dtRows);
+        }catch(e){ console.warn('left select refresh skipped', e); }
+      }, force ? 0 : 60);
+    }
+
+    let leftSelectBuildToken = 0;
     function updateAllSelects(dataRows){
-      const horseCells = document.querySelectorAll(".horse");
+      const token=++leftSelectBuildToken;
+      const horseCells=Array.from(document.querySelectorAll('.horse'));
+      let i=0;
 
-      // 既存の選択を保持
-      let oldSelections = [];
-      horseCells.forEach((cell, i) => {
-        let sel = cell.querySelector("select");
-        oldSelections[i] = sel ? sel.value : "";
-      });
-
-      // 再生成
-      horseCells.forEach((cell, i) => {
-        let sel = cell.querySelector("select");
-        if(!sel){
-          sel = document.createElement("select");
-          cell.appendChild(sel);
+      function buildChunk(){
+        if(token!==leftSelectBuildToken) return;
+        // option DOM生成は重いため、6列ずつ処理してイベントループへ制御を返す。
+        const end=Math.min(horseCells.length,i+6);
+        for(; i<end; i++){
+          const cell=horseCells[i];
+          let sel=cell.querySelector('select');
+          if(!sel){ sel=document.createElement('select'); cell.appendChild(sel); }
+          const oldVal=sel.value;
+          const headerName=allHeaders[i];
+          const colIndex=columnMap[headerName];
+          if(colIndex===undefined){
+            sel.innerHTML="<option value=''>選択</option>";
+            continue;
+          }
+          const values=new Set();
+          for(let r=0; r<dataRows.length; r++){
+            const v=dataRows[r][colIndex];
+            if(v!==undefined && v!==null && String(v)!=='') values.add(v);
+          }
+          const uniqueVals=sortCandidates([...values]);
+          sel.innerHTML="<option value=''>選択</option>" +
+            uniqueVals.map(v=>`<option value="${v}">${v}</option>`).join('');
+          if(oldVal && Array.from(sel.options).some(o=>o.value===oldVal)) sel.value=oldVal;
+          else sel.value='';
         }
-        let headerName = allHeaders[i];
-        let colIndex = columnMap[headerName];
-        if(colIndex === undefined){
-          sel.innerHTML = "<option value=''>選択</option>";
-          return;
-        }
-        let uniqueVals = sortCandidates([...new Set(dataRows.map(r => r[colIndex]))] );
-        let opts = "<option value=''>選択</option>" +
-          uniqueVals.map(v => `<option value="${v}">${v}</option>`).join("");
-        sel.innerHTML = opts;
-      });
-
-      // 選択を復元
-      horseCells.forEach((cell, i) => {
-        let sel = cell.querySelector("select");
-        if(!sel) return;
-        let oldVal = oldSelections[i];
-        if(oldVal && [...sel.options].some(o => o.value === oldVal)){
-          sel.value = oldVal;
-        } else {
-          sel.value = "";
-        }
-      });
+        if(i<horseCells.length) setTimeout(buildChunk,0);
+      }
+      buildChunk();
     }
 
     document.addEventListener("change", e => {
@@ -1629,10 +1695,7 @@ sel.innerHTML = opts;
       });
 
       table.draw();
-
-      // フィルタ後の行データに合わせて左パネルプルダウンを再生成
-      let dtRows = table.rows({search:'applied'}).data().toArray();
-      updateAllSelects(dtRows);
+      // 左側プルダウン同期はdrawハンドラ側で結果集合が変化した時だけ遅延実行する。
     }
   </script>
 
@@ -2115,8 +2178,10 @@ const set = new Set();
   const MAJOR_LINES = new Set(['ブランドフォード','レイズアネイティヴ','ヘイルトゥリーズン','ファイントップ','プリンスリーギフト','マイバブー','ノーザンダンサー']);
 
   let activePayload = null;
+  let llmMatchMask = null;
   let llmFilterInstalled = false;
   let llmAutoLoaded = false;
+  let llmSearchToken = 0;
 
   function getDT(){
     try{
@@ -2492,6 +2557,21 @@ const set = new Set();
     el.textContent=message;
   }
 
+  function setProgress(percent, text, visible=true){
+    const wrap=document.getElementById('llmProgress');
+    const bar=document.getElementById('llmProgressBar');
+    const label=document.getElementById('llmProgressText');
+    if(wrap) wrap.classList.toggle('is-active', !!visible);
+    if(bar) bar.style.width=Math.max(0,Math.min(100,Number(percent)||0))+'%';
+    if(label) label.textContent=text||'';
+  }
+
+  function setLlmBusy(busy){
+    ['llmApplyBtn','llmSampleBtn','llmCopyUrlBtn','llmClearBtn'].forEach(id=>{
+      const e=document.getElementById(id); if(e)e.disabled=!!busy;
+    });
+  }
+
   function updatePreview(payload){
     const pre=document.getElementById('llmPreview');
     const qWrap=document.getElementById('llmQueryWrap');
@@ -2583,42 +2663,123 @@ const set = new Set();
     const fn=function(settings,data,dataIndex,rowData){
       const dt=getDT();
       if(!dt || settings.nTable!==dt.table().node() || !activePayload) return true;
-      // DataTables の検索用dataにはrender後HTMLが入る列があるため、可能なら元rowDataを使う。
-      const rawRow = Array.isArray(rowData) ? rowData : data;
-      try{
-        if(!targetPass(rawRow,activePayload.target)) return false;
-        return evalExpression(rawRow,activePayload.constraints);
-      }catch(e){
-        console.error('LLM filter evaluation error',e);
-        return false;
+      // 高速化: 条件式は適用時に1回だけ全件評価済み。draw時は1配列参照だけにする。
+      if(llmMatchMask && dataIndex >= 0 && dataIndex < llmMatchMask.length){
+        return llmMatchMask[dataIndex] === 1;
       }
+      return true;
     };
     fn.__DBMS_LLM_FILTER__=true;
     $.fn.dataTable.ext.search.push(fn);
     llmFilterInstalled=true;
   }
 
+  function sourceRowsForMask(){
+    if(typeof originalData!=='undefined' && Array.isArray(originalData) && originalData.length) return originalData;
+    const dt=getDT();
+    return dt ? dt.rows().data().toArray() : [];
+  }
+
+  function buildLlmMatchMaskAsync(payload, token){
+    const rows=sourceRowsForMask();
+    const total=rows.length;
+    const mask=new Uint8Array(total);
+    // 1フレームを長く占有しないよう小分けに評価する。
+    const chunkSize = total > 4000 ? 300 : 220;
+    let i=0, matched=0;
+    const started=performance.now();
+
+    return new Promise((resolve,reject)=>{
+      function step(){
+        if(token!==llmSearchToken){ reject(new Error('search_cancelled')); return; }
+        const end=Math.min(total,i+chunkSize);
+        try{
+          for(; i<end; i++){
+            const row=rows[i];
+            const ok=targetPass(row,payload.target) && evalExpression(row,payload.constraints);
+            if(ok){ mask[i]=1; matched++; }
+          }
+        }catch(e){ reject(e); return; }
+
+        const pct=total ? Math.round(i/total*100) : 100;
+        setProgress(pct, '検索条件を評価中… '+i.toLocaleString()+' / '+total.toLocaleString()+'頭');
+        if(i<total){
+          setTimeout(step,0);
+        }else{
+          resolve({mask,matched,total,evalMs:performance.now()-started});
+        }
+      }
+      // status/progressを先に描画させる。
+      requestAnimationFrame(()=>setTimeout(step,0));
+    });
+  }
+
   function resultCount(){
     const dt=getDT(); return dt ? dt.rows({search:'applied'}).count() : 0;
   }
 
-  function applyPayload(payload, sourceLabel){
+  async function applyPayload(payload, sourceLabel){
     const validation=validatePayload(payload);
     updatePreview(payload);
     if(validation.errors.length){
       activePayload=null;
+      llmMatchMask=null;
+      setProgress(0,'',false);
       setStatus('検索条件を適用できません。\n・'+validation.errors.join('\n・'),'error');
       const dt=getDT(); if(dt)dt.draw();
       return false;
     }
-    resetManualFilters();
-    activePayload=payload;
-    installLlmFilter();
-    applySimpleUiHints(payload);
-    try{ if(typeof applyAllFilters==='function') applyAllFilters(); else getDT()?.draw(); }catch(e){ getDT()?.draw(); }
-    const warnings=validation.warnings.length ? '\n\n注意:\n・'+validation.warnings.join('\n・') : '';
-    setTimeout(()=>setStatus((sourceLabel||'JSON')+'から検索条件を適用しました。\n該当件数: '+resultCount()+'件'+warnings,validation.warnings.length?'warn':'ok'),0);
-    return true;
+
+    const token=++llmSearchToken;
+    setLlmBusy(true);
+    setStatus((sourceLabel||'JSON')+'の検索条件を準備しています…','ok');
+    setProgress(0,'検索準備中…',true);
+
+    try{
+      // 先に過去条件を解除。ただしLLMフィルタはmask完成後に有効化する。
+      activePayload=null;
+      llmMatchMask=null;
+      resetManualFilters();
+
+      const totalStart=performance.now();
+      const built=await buildLlmMatchMaskAsync(payload,token);
+      if(token!==llmSearchToken) return false;
+
+      activePayload=payload;
+      llmMatchMask=built.mask;
+      installLlmFilter();
+      applySimpleUiHints(payload);
+
+      setProgress(96,'検索結果を表へ反映中…');
+      const drawStart=performance.now();
+      // LLM条件はmaskだけで完全に判定できるため、103列すべてへのcolumn.search再設定は行わない。
+      // applySimpleUiHintsは画面表示用。手動条件を追加変更した時点で通常のapplyAllFiltersへ合流する。
+      const dt=getDT();
+      if(dt) dt.draw(false);
+      const drawMs=performance.now()-drawStart;
+
+      // draw直後の左45プルダウン更新は別タイミングへ遅延しているため、先に完了表示できる。
+      const totalMs=performance.now()-totalStart;
+      const warnings=validation.warnings.length ? '\n\n注意:\n・'+validation.warnings.join('\n・') : '';
+      setProgress(100,'完了: '+built.matched.toLocaleString()+'件 / '+built.total.toLocaleString()+'頭',true);
+      setStatus(
+        (sourceLabel||'JSON')+'から検索条件を適用しました。\n'+
+        '該当件数: '+resultCount().toLocaleString()+'件\n'+
+        '条件評価: '+Math.round(built.evalMs)+' ms / 表反映: '+Math.round(drawMs)+' ms / 合計: '+Math.round(totalMs)+' ms'+warnings,
+        validation.warnings.length?'warn':'ok'
+      );
+      setTimeout(()=>{ if(token===llmSearchToken) setProgress(100,'完了',false); },1200);
+      return true;
+    }catch(e){
+      if(e?.message==='search_cancelled') return false;
+      activePayload=null;
+      llmMatchMask=null;
+      setProgress(0,'',false);
+      setStatus('LLM検索処理中にエラーが発生しました。\n'+(e?.message||e),'error');
+      return false;
+    }finally{
+      if(token===llmSearchToken) setLlmBusy(false);
+    }
   }
 
   function parseInput(){
@@ -2630,7 +2791,11 @@ const set = new Set();
   }
 
   function clearPayload(){
+    llmSearchToken++;
     activePayload=null;
+    llmMatchMask=null;
+    setLlmBusy(false);
+    setProgress(0,'',false);
     resetManualFilters();
     const ta=document.getElementById('llmJsonInput'); if(ta)ta.value='';
     updatePreview(null);
@@ -2657,8 +2822,8 @@ const set = new Set();
   }
 
   function bindUi(){
-    document.getElementById('llmApplyBtn')?.addEventListener('click',()=>{
-      try{ const p=parseInput(); applyPayload(p,'貼り付けJSON'); }
+    document.getElementById('llmApplyBtn')?.addEventListener('click',async()=>{
+      try{ const p=parseInput(); await applyPayload(p,'貼り付けJSON'); }
       catch(e){ setStatus('JSONの解析に失敗しました。\n'+e.message,'error'); }
     });
     document.getElementById('llmSampleBtn')?.addEventListener('click',()=>{
@@ -2710,13 +2875,8 @@ const set = new Set();
       const dt=getDT();
       if(dt){
         clearInterval(timer);
-        dt.on('draw.dbmsllm',()=>{
-          if(activePayload){
-            const old=document.getElementById('llmStatus')?.textContent||'';
-            const prefix=old.split('\n該当件数:')[0];
-            if(prefix) setStatus(prefix+'\n該当件数: '+resultCount()+'件'+(old.includes('\n\n注意:')?'\n\n注意:'+old.split('\n\n注意:')[1]:''), document.getElementById('llmStatus')?.classList.contains('is-warn')?'warn':'ok');
-          }
-        });
+        // LLMの重い条件評価はdrawでは行わない。件数表示も検索完了時に更新する。
+        dt.on('draw.dbmsllm',()=>{});
       }
     },100);
   });
