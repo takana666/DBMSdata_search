@@ -1163,12 +1163,12 @@ headerRow.forEach((col, i) => {
       applyVerticalHeaderLabels();
       requestAnimationFrame(applyVerticalHeaderLabels);
 
-      // 高速化: drawごとに45個のプルダウンを無条件再生成しない。
-      // 検索結果の行集合が本当に変わった時だけ、描画後に少し遅らせて同期する。
+      // 高速化v2: draw時には左45個のプルダウンを一切再生成しない。
+      // 候補はユーザーが各プルダウンを開いた瞬間に、その1個だけ生成する。
       table.on('draw', function(){
         try{
           applyVerticalHeaderLabels();
-          scheduleLeftSelectRefresh(false);
+          invalidateLeftSelectOptions();
         }catch(e){}
       });
 
@@ -1463,8 +1463,10 @@ const v = (distanceCol >= 0 ? (data[distanceCol] ?? '') : '').toString().trim();
       })();
 
 
-      // 左側プルダウンは画面の初期描画を先に返してから生成する。
-      scheduleLeftSelectRefresh(true);
+      // 高速化v2: 左45個のプルダウンは空のselectだけ用意する。
+      // 数千件×45列の候補生成は起動時には行わず、各selectを開いた時だけ生成する。
+      ensureLeftSelectShells();
+      invalidateLeftSelectOptions();
 
       // 右側ヘッダー2行目<select> の選択肢生成
       populateColumnFilters(headerRow, dataRows);
@@ -1566,68 +1568,84 @@ sel.innerHTML = opts;
     }
 
     // =========================
-    // 4. 左パネルプルダウン（高速化）
+    // 4. 左パネルプルダウン（高速化v2: 完全遅延生成）
     // =========================
-    let leftSelectRefreshTimer = null;
-    let leftSelectResultSignature = null;
+    // 旧方式はdraw後に45個すべての候補を再生成していたため、
+    // 「準備完了」表示後もバックグラウンドで数秒DOM生成が続いていた。
+    // v2ではselect自体だけ先に用意し、開く瞬間に対象1列だけ候補を生成する。
+    let leftSelectRevision = 1;
+    let leftSelectRowsCacheRevision = -1;
+    let leftSelectRowsCache = null;
 
-    function filteredRowSignature(){
-      if(!table) return '';
-      // インデックス列だけで比較するため、全行データのtoArray()よりかなり軽い。
-      const idx = table.rows({search:'applied'}).indexes().toArray();
-      return idx.join(',');
-    }
-
-    function scheduleLeftSelectRefresh(force){
-      if(!table) return;
-      clearTimeout(leftSelectRefreshTimer);
-      leftSelectRefreshTimer = setTimeout(() => {
-        try{
-          const sig = filteredRowSignature();
-          if(!force && sig === leftSelectResultSignature) return;
-          leftSelectResultSignature = sig;
-          const dtRows = table.rows({search:'applied'}).data().toArray();
-          updateAllSelects(dtRows);
-        }catch(e){ console.warn('left select refresh skipped', e); }
-      }, force ? 0 : 60);
-    }
-
-    let leftSelectBuildToken = 0;
-    function updateAllSelects(dataRows){
-      const token=++leftSelectBuildToken;
-      const horseCells=Array.from(document.querySelectorAll('.horse'));
-      let i=0;
-
-      function buildChunk(){
-        if(token!==leftSelectBuildToken) return;
-        // option DOM生成は重いため、6列ずつ処理してイベントループへ制御を返す。
-        const end=Math.min(horseCells.length,i+6);
-        for(; i<end; i++){
-          const cell=horseCells[i];
-          let sel=cell.querySelector('select');
-          if(!sel){ sel=document.createElement('select'); cell.appendChild(sel); }
-          const oldVal=sel.value;
-          const headerName=allHeaders[i];
-          const colIndex=columnMap[headerName];
-          if(colIndex===undefined){
-            sel.innerHTML="<option value=''>選択</option>";
-            continue;
-          }
-          const values=new Set();
-          for(let r=0; r<dataRows.length; r++){
-            const v=dataRows[r][colIndex];
-            if(v!==undefined && v!==null && String(v)!=='') values.add(v);
-          }
-          const uniqueVals=sortCandidates([...values]);
-          sel.innerHTML="<option value=''>選択</option>" +
-            uniqueVals.map(v=>`<option value="${v}">${v}</option>`).join('');
-          if(oldVal && Array.from(sel.options).some(o=>o.value===oldVal)) sel.value=oldVal;
-          else sel.value='';
+    function ensureLeftSelectShells(){
+      const horseCells = Array.from(document.querySelectorAll('.horse'));
+      horseCells.forEach((cell, i) => {
+        let sel = cell.querySelector('select');
+        if(!sel){
+          sel = document.createElement('select');
+          sel.innerHTML = "<option value=''>選択</option>";
+          cell.appendChild(sel);
+        }else if(!sel.options.length){
+          sel.innerHTML = "<option value=''>選択</option>";
         }
-        if(i<horseCells.length) setTimeout(buildChunk,0);
-      }
-      buildChunk();
+        sel.dataset.leftIndex = String(i);
+        if(sel.dataset.optionsRevision == null) sel.dataset.optionsRevision = '-1';
+      });
     }
+
+    function invalidateLeftSelectOptions(){
+      leftSelectRevision++;
+      leftSelectRowsCacheRevision = -1;
+      leftSelectRowsCache = null;
+    }
+
+    function getAppliedRowsForLeftSelects(){
+      if(leftSelectRowsCacheRevision === leftSelectRevision && leftSelectRowsCache){
+        return leftSelectRowsCache;
+      }
+      leftSelectRowsCache = table ? table.rows({search:'applied'}).data().toArray() : [];
+      leftSelectRowsCacheRevision = leftSelectRevision;
+      return leftSelectRowsCache;
+    }
+
+    function buildOneLeftSelect(sel){
+      if(!sel || !sel.matches('.horse select')) return;
+      const i = Number(sel.dataset.leftIndex);
+      if(!Number.isInteger(i) || i < 0 || i >= allHeaders.length) return;
+      if(Number(sel.dataset.optionsRevision) === leftSelectRevision) return;
+
+      const oldVal = sel.value;
+      const headerName = allHeaders[i];
+      const colIndex = columnMap[headerName];
+      if(colIndex === undefined){
+        sel.innerHTML = "<option value=''>選択</option>";
+        sel.dataset.optionsRevision = String(leftSelectRevision);
+        return;
+      }
+
+      const rows = getAppliedRowsForLeftSelects();
+      const values = new Set();
+      for(let r=0; r<rows.length; r++){
+        const v = rows[r][colIndex];
+        if(v!==undefined && v!==null && String(v)!=='') values.add(String(v));
+      }
+      const uniqueVals = sortCandidates([...values]);
+      sel.innerHTML = "<option value=''>選択</option>" +
+        uniqueVals.map(v=>`<option value="${String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}">${String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</option>`).join('');
+      if(oldVal && Array.from(sel.options).some(o=>o.value===oldVal)) sel.value=oldVal;
+      else sel.value='';
+      sel.dataset.optionsRevision = String(leftSelectRevision);
+    }
+
+    // マウス/タッチで開く直前、またはキーボードでフォーカスした時だけ候補を作る。
+    document.addEventListener('pointerdown', e => {
+      const sel = e.target.closest?.('.horse select');
+      if(sel) buildOneLeftSelect(sel);
+    }, true);
+    document.addEventListener('focusin', e => {
+      const sel = e.target.closest?.('.horse select');
+      if(sel) buildOneLeftSelect(sel);
+    });
 
     document.addEventListener("change", e => {
       if(e.target.matches(".horse select")){
@@ -1749,7 +1767,9 @@ sel.innerHTML = opts;
   // Collect options from ALL rows for the given slot headers
   function collectOptionsForSlots(dt, colMap, slotHeaders) {
 const set = new Set();
-    const allRows = dt.rows().data().toArray(); // all rows, unfiltered
+    const allRows = (typeof originalData!=='undefined' && Array.isArray(originalData) && originalData.length)
+      ? originalData
+      : dt.rows().data().toArray(); // all rows, unfiltered
     slotHeaders.forEach(hdr => {
       const ci = colMap[hdr];
       if (ci === undefined) return;
@@ -1842,14 +1862,18 @@ const set = new Set();
       const genAll = document.getElementById('genAllSelect');
       if(!(gen2 && gen3 && gen4 && gen5)) return;
 
-      function rebuildAllGenOptions(){
-        populateSelect(gen2, collectOptionsForSlots(dt, colMap, GEN_SLOTS[2]));
-        populateSelect(gen3, collectOptionsForSlots(dt, colMap, GEN_SLOTS[3]));
-        populateSelect(gen4, collectOptionsForSlots(dt, colMap, GEN_SLOTS[4]));
-        populateSelect(gen5, collectOptionsForSlots(dt, colMap, GEN_SLOTS[5]));
-        if (genAll) populateSelect(genAll, collectOptionsForSlots(dt, colMap, GEN_SLOTS_ALL));
+      // 高速化v2: 代数候補も起動時には作らない。
+      // 各selectを初めて開いた時だけ、そのselectの候補を生成する。
+      function ensureGenOptions(sel, slots){
+        if(!sel || sel.dataset.optionsLoaded==='1') return;
+        populateSelect(sel, collectOptionsForSlots(dt, colMap, slots));
+        sel.dataset.optionsLoaded='1';
       }
-      rebuildAllGenOptions();
+      [[gen2,GEN_SLOTS[2]],[gen3,GEN_SLOTS[3]],[gen4,GEN_SLOTS[4]],[gen5,GEN_SLOTS[5]],[genAll,GEN_SLOTS_ALL]].forEach(([sel,slots])=>{
+        if(!sel) return;
+        sel.addEventListener('pointerdown',()=>ensureGenOptions(sel,slots),true);
+        sel.addEventListener('focus',()=>ensureGenOptions(sel,slots));
+      });
 
       const state = { 2:'', 3:'', 4:'', 5:'' };
       let allVal = '';
@@ -1892,8 +1916,10 @@ const set = new Set();
         });
       }
 
-      // If the underlying data is reloaded (Ajax), refresh options again
-      $(dt.table().node()).on('xhr.dt', function(){ setTimeout(rebuildAllGenOptions, 0); });
+      // If the underlying data is reloaded (Ajax),候補は再度必要になった時に生成する。
+      $(dt.table().node()).on('xhr.dt', function(){
+        [gen2,gen3,gen4,gen5,genAll].forEach(sel=>{ if(sel) sel.dataset.optionsLoaded='0'; });
+      });
     });
   });
 })();
@@ -2652,7 +2678,13 @@ const set = new Set();
         const gens=Array.isArray(c.selector.generation)?c.selector.generation:[c.selector.generation];
         if(gens.length===1 && [2,3,4,5].includes(Number(gens[0]))){
           const e=document.getElementById('gen'+Number(gens[0])+'Select');
-          if(e && [...e.options].some(o=>o.value===String(c.value))) e.value=String(c.value);
+          if(e){
+            const v=String(c.value);
+            if(![...e.options].some(o=>o.value===v)){
+              const opt=document.createElement('option'); opt.value=v; opt.textContent=v; opt.dataset.llmHint='1'; e.appendChild(opt);
+            }
+            e.value=v;
+          }
         }
       }
     });
