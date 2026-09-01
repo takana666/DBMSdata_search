@@ -617,34 +617,32 @@
 
 <div id="tab-llm" class="tabs-left__pane">
         <h3>LLM</h3>
-        <div class="llm-box">
-          <div class="llm-title">GPTから受け取った検索条件</div>
-          <div class="llm-note">
-            <code>dbms-search-v1</code>（schema 1.2.0 / 1.1.0互換）の検索JSONを貼り付けるか、
-            <code>#dbms=&lt;BASE64URL_UTF8_JSON&gt;</code> 付きURLでこのページを開いてください。<br>
-            LLM条件を適用すると、通常の手動検索条件はいったんクリアしてから検索します。
-          </div>
-          <textarea id="llmJsonInput" spellcheck="false" placeholder='{"protocol":"dbms-search-v1","status":"ready",...}'></textarea>
-          <div class="llm-actions">
-            <button type="button" id="llmApplyBtn">検索条件を反映</button>
-            <button type="button" id="llmSampleBtn">サンプルを入力</button>
-            <button type="button" id="llmCopyUrlBtn">検索URLをコピー</button>
-            <button type="button" id="llmClearBtn">LLM条件を解除</button>
-            <button type="button" id="llmSelfTestBtn">自己診断</button>
-          </div>
-        </div>
 
         <div class="llm-box">
           <div class="llm-title">各LLMで使う指示書</div>
           <div class="llm-note">
-            ChatGPT / Claude / Gemini など、各ユーザーが普段使っているLLMには
-            <strong>「LLM用指示書.md」1ファイルだけ</strong>を読み込ませれば検索条件を生成できます。<br>
-            mydata.csv は不要です。JSON仕様書は開発・検証用の任意資料です。
+            ChatGPT / Claude / Gemini など、普段使っているLLMへ
+            <strong>「LLM用指示書.md」ファイルを</strong>読み込ませるか、
+            <strong>「LLM用指示書をコピー」を押して</strong>LLMへ貼り付けてください。
           </div>
           <div class="llm-actions">
             <button type="button" id="llmDownloadGuideBtn">LLM用指示書.mdをDL</button>
-            <button type="button" id="llmCopyGuideBtn">指示書をコピー</button>
-            <button type="button" id="llmDownloadSpecBtn">JSON仕様をDL（任意）</button>
+            <button type="button" id="llmCopyGuideBtn">LLM用指示書をコピー</button>
+          </div>
+
+          <div style="margin-top:14px;">
+            <div class="llm-title">LLMでの指示方法</div>
+            <div class="llm-note">
+              条件を普通の日本語で伝えれば検索できます。必要に応じて、検索対象・優先条件・並び順・件数も指定してください。
+            </div>
+            <div class="llm-query-text" style="margin-top:8px;">
+              <strong>例</strong><br>
+              種牡馬を検索してください。<br>
+              必須条件：走因子または中因子を持ち、速因子も持つ。短因子は持たず、血統内にも短因子がない。<br>
+              できれば：スタミナ系子系統を多く含む。<br>
+              ST子系統の種類数が多い順に上位20頭。<br>
+              この条件でDBMS検索リンクを作ってください。
+            </div>
           </div>
         </div>
 
@@ -655,28 +653,57 @@
             <div class="llm-progress-track"><div id="llmProgressBar" class="llm-progress-bar"></div></div>
             <div id="llmProgressText" class="llm-progress-text"></div>
           </div>
-          <div id="llmQueryWrap" style="display:none; margin-top:8px;">
-            <div class="llm-title">検索意図</div>
-            <div id="llmQueryText" class="llm-query-text"></div>
+        </div>
+
+        <div class="llm-box" id="llmQueryWrap">
+          <div class="llm-title">検索意図</div>
+          <div id="llmQueryText" class="llm-query-text">（未受信）</div>
+        </div>
+
+
+        <details class="llm-box" style="margin-top:10px;">
+          <summary style="cursor:pointer; font-weight:700;">開発・デバッグ機能</summary>
+
+          <div style="margin-top:10px;">
+            <div class="llm-title">検索JSONの手動入力</div>
+            <div class="llm-note">
+              通常利用では不要です。開発・検証時のみ、<code>dbms-search-v1</code> の検索JSONを直接貼り付けて使用します。
+            </div>
+            <textarea id="llmJsonInput" spellcheck="false" placeholder='{"protocol":"dbms-search-v1","status":"ready",...}'></textarea>
+            <div class="llm-actions">
+              <button type="button" id="llmApplyBtn">検索条件を反映</button>
+              <button type="button" id="llmSampleBtn">サンプルを入力</button>
+              <button type="button" id="llmCopyUrlBtn">検索URLをコピー</button>
+              <button type="button" id="llmClearBtn">LLM条件を解除</button>
+              <button type="button" id="llmSelfTestBtn">自己診断</button>
+            </div>
           </div>
-        </div>
 
-        <div class="llm-box" id="llmRankingBox" style="display:none;">
-          <div class="llm-title">上位結果・評価理由</div>
-          <div class="llm-note">preferences がある場合は重み付きスコアで順位付けします。result.sort がある場合は明示ソートを優先します。</div>
-          <div id="llmRanking" class="llm-ranking"></div>
-        </div>
+          <div style="margin-top:14px;">
+            <div class="llm-title">受信JSON</div>
+            <div id="llmBadges"></div>
+            <pre id="llmPreview">（未受信）</pre>
+          </div>
 
-        <div class="llm-box">
-          <div class="llm-title">受信条件</div>
-          <div id="llmBadges"></div>
-          <pre id="llmPreview">（未受信）</pre>
-          <details style="margin-top:8px;">
+          <div id="llmRankingBox" style="display:none; margin-top:14px;">
+            <div class="llm-title">上位結果・評価理由</div>
+            <div class="llm-note">優先条件が指定されている場合のみ、評価理由と順位を表示します。</div>
+            <div id="llmRanking" class="llm-ranking"></div>
+          </div>
+
+          <div style="margin-top:14px;">
+            <div class="llm-title">開発資料</div>
+            <div class="llm-actions">
+              <button type="button" id="llmDownloadSpecBtn">JSON仕様をDL</button>
+            </div>
+          </div>
+
+          <details style="margin-top:12px;">
             <summary>自己診断結果</summary>
             <div id="llmSelfTest" class="llm-selftest">未実行</div>
           </details>
-        </div>
-      </div>
+        </details>
+      </div></div>
 </div>
     
     </div>
@@ -3030,8 +3057,8 @@ const set = new Set();
     const q=document.getElementById('llmQueryText');
     const badges=document.getElementById('llmBadges');
     if(pre) pre.textContent=payload ? JSON.stringify(payload,null,2) : '（未受信）';
-    if(qWrap) qWrap.style.display=payload?.query_text ? '' : 'none';
-    if(q) q.textContent=payload?.query_text || '';
+    if(qWrap) qWrap.style.display='';
+    if(q) q.textContent=payload?.query_text || '（未受信）';
     if(badges){
       badges.innerHTML='';
       if(payload){
