@@ -47,15 +47,28 @@
     #app-status.is-error { border-color:#c84d4d; background:#fff5f5; }
     .container {
       display: flex;
+      width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
     }
-    /* 左パネル=幅2/5、右パネル=幅3/5 */
+    /* 左30%・右70%を維持。内部コンテンツのmin-content幅で
+       左右パネル自体が押し広げられないようにする。 */
     .left-panel {
       width: 30%;
+      flex: 0 0 30%;
+      min-width: 0;
+      max-width: 30%;
+      box-sizing: border-box;
       padding: 10px;
       border-right: 2px solid #ccc;
+      overflow-x: hidden;
     }
     .right-panel {
       width: 70%;
+      flex: 1 1 70%;
+      min-width: 0;
+      max-width: 70%;
+      box-sizing: border-box;
       padding: 10px;
       overflow-x: auto; /* テーブルだけ横スクロール */
     }
@@ -159,7 +172,11 @@
 @media (max-width: 640px){
   /* モバイルでは左右を縦積み（はみ出し/押し出し防止） */
   .container{ flex-direction: column !important; }
-  .left-panel, .right-panel{ width: 100% !important; }
+  .left-panel, .right-panel{
+    width: 100% !important;
+    max-width: 100% !important;
+    flex: 1 1 100% !important;
+  }
   .left-panel{ border-right: none !important; min-width: 0 !important; }
   .right-panel{ min-width: 0 !important; }
 
@@ -345,7 +362,18 @@
 
   <style>
     /* ===== LLM連携タブ (dbms-search-v1 / schema 1.2, v1.1互換) ===== */
+    #tab-llm {
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
+      box-sizing: border-box;
+      overflow-wrap: anywhere;
+    }
     #tab-llm .llm-box {
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
+      box-sizing: border-box;
       border: 1px solid #ddd;
       border-radius: 8px;
       padding: 10px;
@@ -364,7 +392,13 @@
       line-height: 1.45;
     }
     #tab-llm .llm-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
-    #tab-llm .llm-actions button { padding:6px 10px; cursor:pointer; }
+    #tab-llm .llm-actions button {
+      padding:6px 10px;
+      cursor:pointer;
+      max-width:100%;
+      white-space:normal;
+      overflow-wrap:anywhere;
+    }
     #tab-llm .llm-status {
       white-space: pre-wrap;
       overflow-wrap: anywhere;
